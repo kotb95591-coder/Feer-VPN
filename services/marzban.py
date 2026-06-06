@@ -36,8 +36,12 @@ class MarzbanClient:
 
     @property
     def enabled(self) -> bool:
-        """Marzban настроен только если задан базовый URL (иначе — тестовый режим)."""
-        return bool(config.MARZBAN_BASE_URL)
+        """Marzban настроен только если задан настоящий http(s) URL.
+
+        Пусто / none / null / прочие плейсхолдеры — тестовый режим (демо-ключ).
+        """
+        url = (config.MARZBAN_BASE_URL or "").strip().lower()
+        return url.startswith("http://") or url.startswith("https://")
 
     # ---------- внутреннее ----------
     async def _get_token(self, session: aiohttp.ClientSession) -> str:
