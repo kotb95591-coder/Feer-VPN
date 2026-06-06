@@ -2,6 +2,7 @@
 import logging
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery
 
@@ -16,6 +17,23 @@ from utils.qr import make_qr
 
 log = logging.getLogger(__name__)
 router = Router(name="payment")
+
+
+async def _safe_answer(
+    call: CallbackQuery, text: str = "", show_alert: bool = False
+) -> None:
+    """Безопасный call.answer().
+
+    При повторной доставке устаревшего апдейта (например, после того как
+    вебхук какое-то время падал и Telegram накопил очередь) callback-query
+    «протухает», и call.answer() кидает TelegramBadRequest
+    'query is too old ... or query ID is invalid'. Это некритичный тост —
+    гасим исключение, чтобы основная выдача ключа не прерывалась.
+    """
+    try:
+        await call.answer(text, show_alert=show_alert)
+    except TelegramBadRequest:
+        log.warning("callback answer пропущен: query устарел")
 
 
 async def _deliver_subscription(
@@ -67,12 +85,12 @@ async def cb_check_pay(call: CallbackQuery, state: FSMContext, bot: Bot) -> None
     payment_id = int(call.data.split(":", 1)[1])
     payment = await repo.get_payment(payment_id)
     if not payment:
-        await call.answer("Платёж не найден", show_alert=True)
+        await _safe_answer(call, "Платёж не найден", show_alert=True)
         return
     if payment.status == "paid":
         # платёж уже зачтён — повторно выдаём ключ (идемпотентно:
         # на случай если в прошлый раз выдача не дошла)
-        await call.answer("Платёж подтверждён, выдаю ключ…")
+        await _safe_answer(call, "Платёж подтверждён, выдаю ключ…")
         if payment.type == "unban":
             user = await repo.get_user_by_id(payment.user_id)
             await sub_service.unban_account(user)
@@ -82,10 +100,10 @@ async def cb_check_pay(call: CallbackQuery, state: FSMContext, bot: Bot) -> None
             await _deliver_subscription(call, payment, bot)
         return
     if payment.status == "expired":
-        await call.answer("Срок ожидания истёк. Создай новый платёж.", show_alert=True)
+        await _safe_answer(call, "Срок ожидания истёк. Создай новый платёж.", show_alert=True)
         return
 
-    await call.answer("Проверяю оплату…")
+    await _safe_answer(call, "Проверяю оплату…")
     try:
         donation = await donation_alerts.find_matching(payment.code, payment.amount)
     except DonationAlertsError as e:
