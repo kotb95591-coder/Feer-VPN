@@ -26,14 +26,19 @@ def _libsql_ready() -> bool:
         return False
 
 
-def _build_url() -> str:
-    """Собираем SQLAlchemy URL.
+def _build_engine_config() -> tuple[str, dict]:
+    """Собираем (URL, connect_args) для SQLAlchemy.
 
-    Turso отдаёт адрес вида libsql://<db>-<org>.turso.io.
-    Диалект sqlalchemy-libsql ожидает sqlite+libsql://<host>/?authToken=...&secure=true
+    ВАЖНО (фикс WSServerHandshakeError 400):
+    sqlalchemy-libsql 0.2.x ходит в Turso по HTTP через Rust-клиент
+    libsql_experimental. Старая 0.1.0 умела ТОЛЬКО WebSocket (wss://),
+    а Turso на региональных хостах (*.aws-eu-west-1.turso.io) отвечает на
+    WS-handshake кодом 400. Поэтому:
+      - URL: sqlite+libsql://<host>?secure=true   (secure=true => https, не wss)
+      - токен передаём через connect_args["auth_token"], а НЕ в query-строке.
 
     Если Turso задан и драйвер есть — идём в Turso.
-    Иначе (например локальный тест на Python 3.14) — локальный SQLite-файл.
+    Иначе (например локальный тест на новом Python) — локальный SQLite-файл.
     """
     if config.TURSO_DATABASE_URL and _libsql_ready():
         host = (
@@ -43,8 +48,12 @@ def _build_url() -> str:
             .replace("wss://", "")
             .rstrip("/")
         )
-        token = config.TURSO_AUTH_TOKEN
-        return f"sqlite+libsql://{host}/?authToken={token}&secure=true"
+        url = f"sqlite+libsql://{host}?secure=true"
+        connect_args = {
+            "auth_token": config.TURSO_AUTH_TOKEN,
+            "check_same_thread": False,
+        }
+        return url, connect_args
     if config.TURSO_DATABASE_URL:
         log.warning(
             "TURSO задан, но драйвер libSQL не установлен — использую локальный SQLite %s "
@@ -53,15 +62,17 @@ def _build_url() -> str:
         )
     else:
         log.warning("TURSO_DATABASE_URL не задан — использую локальный SQLite (%s)", config.LOCAL_DB_PATH)
-    return f"sqlite:///{config.LOCAL_DB_PATH}"
+    return f"sqlite:///{config.LOCAL_DB_PATH}", {"check_same_thread": False}
 
+
+_db_url, _connect_args = _build_engine_config()
 
 engine = create_engine(
-    _build_url(),
+    _db_url,
     echo=False,
     future=True,
     pool_pre_ping=True,
-    connect_args={"check_same_thread": False},
+    connect_args=_connect_args,
 )
 
 SessionLocal = sessionmaker(
