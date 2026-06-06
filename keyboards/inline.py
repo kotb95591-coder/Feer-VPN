@@ -91,8 +91,9 @@ def admin_menu() -> InlineKeyboardMarkup:
     kb.button(text="🏷 Промокоды", callback_data="adm:promos")
     kb.button(text="📢 Рассылка", callback_data="adm:broadcast")
     kb.button(text="🔍 Лог антифрода", callback_data="adm:fraud")
+    kb.button(text="🎁 Выдать подписку", callback_data="adm:give_help")
     kb.button(text="« В меню", callback_data="menu")
-    kb.adjust(2, 2, 1, 1)
+    kb.adjust(2, 2, 2, 1)
     return kb.as_markup()
 
 
@@ -106,9 +107,11 @@ def admin_promo_menu() -> InlineKeyboardMarkup:
 
 def admin_client_actions(user_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+    kb.button(text="🎁 Выдать Solo", callback_data=f"adm:give:{user_id}:solo")
+    kb.button(text="🎁 Выдать Family", callback_data=f"adm:give:{user_id}:family")
     kb.button(text="➕ +30 дней", callback_data=f"adm:extend:{user_id}")
     kb.button(text="🚫 Бан", callback_data=f"adm:ban:{user_id}")
     kb.button(text="✅ Разбан", callback_data=f"adm:unban:{user_id}")
     kb.button(text="« Назад", callback_data="adm:clients")
-    kb.adjust(2, 1, 1)
+    kb.adjust(2, 1, 2, 1)
     return kb.as_markup()

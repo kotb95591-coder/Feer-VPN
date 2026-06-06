@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from config import config
+from config import TARIFFS, config
 from db import repo
 from handlers.states import AdminStates
 from keyboards import inline
@@ -161,6 +161,121 @@ async def cb_extend(call: CallbackQuery) -> None:
         except MarzbanError:
             pass
     await call.answer("+30 дней", show_alert=True)
+
+
+# ---------------- Выдача подписки вручную ----------------
+
+_GIVE_USAGE = (
+    "🎁 <b>Выдать подписку</b>\n\n"
+    "Себе:\n<code>/give solo</code> или <code>/give family 60</code>\n\n"
+    "Другому (по tg_id):\n<code>/give 123456789 solo</code> или "
+    "<code>/give 123456789 family 60</code>\n\n"
+    f"Тарифы: {', '.join(TARIFFS.keys())}. "
+    "Число в конце — срок в днях (по умолчанию — срок тарифа)."
+)
+
+
+@router.callback_query(F.data == "adm:give_help")
+async def cb_give_help(call: CallbackQuery) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    await edit_or_send(call, _GIVE_USAGE, inline.admin_menu())
+    await call.answer()
+
+
+async def _notify_granted(bot: Bot, user, plan: str, sub) -> None:
+    """Отправляет получателю уведомление с ключом."""
+    key = sub.vless_key or ""
+    text = (
+        f"🎁 <b>Вам выдана подписка {plan_title(plan)}!</b>\n"
+        f"Действует до <b>{fmt_date(sub.expires_at)}</b>."
+    )
+    if key:
+        text += f"\n\n🔑 <b>Ключ</b> (нажми, чтобы скопировать):\n<code>{key}</code>"
+    try:
+        await bot.send_message(user.tg_id, text)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@router.callback_query(F.data.startswith("adm:give:"))
+async def cb_give(call: CallbackQuery, bot: Bot) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    _, _, user_id_s, plan = call.data.split(":")
+    user = await repo.get_user_by_id(int(user_id_s))
+    if not user:
+        await call.answer("Не найден", show_alert=True)
+        return
+    try:
+        sub, is_new = await sub_service.admin_grant(user, plan)
+    except sub_service.SubscriptionError as e:
+        await call.answer(f"Ошибка: {e}", show_alert=True)
+        return
+    await _notify_granted(bot, user, plan, sub)
+    action = "выдана" if is_new else "продлена"
+    await call.answer(
+        f"{plan_title(plan)} {action} до {fmt_date(sub.expires_at)}", show_alert=True
+    )
+
+
+@router.message(Command("give"))
+async def cmd_give(message: Message, bot: Bot) -> None:
+    if not _is_admin(message.from_user.id):
+        return
+    args = (message.text or "").split()[1:]
+    if not args:
+        await message.answer(_GIVE_USAGE)
+        return
+
+    if args[0].lower() in TARIFFS:
+        # выдача себе
+        plan = args[0].lower()
+        days_arg = args[1] if len(args) > 1 else None
+        user = await repo.get_or_create_user(
+            message.from_user.id, message.from_user.username
+        )
+    else:
+        try:
+            target_tg = int(args[0])
+        except ValueError:
+            await message.answer(
+                "Первый аргумент — код тарифа (себе) или tg_id числом (другому)."
+            )
+            return
+        if len(args) < 2 or args[1].lower() not in TARIFFS:
+            await message.answer(f"Укажи тариф: {', '.join(TARIFFS.keys())}")
+            return
+        plan = args[1].lower()
+        days_arg = args[2] if len(args) > 2 else None
+        user = await repo.get_user(target_tg)
+        if not user:
+            await message.answer(
+                "Пользователь не найден — он должен хотя бы раз запустить бота (/start)."
+            )
+            return
+
+    days = None
+    if days_arg is not None:
+        if not days_arg.isdigit():
+            await message.answer("Срок (дней) должен быть числом.")
+            return
+        days = int(days_arg)
+
+    try:
+        sub, is_new = await sub_service.admin_grant(user, plan, days)
+    except sub_service.SubscriptionError as e:
+        await message.answer(f"⚠️ Не удалось выдать: {e}")
+        return
+
+    await _notify_granted(bot, user, plan, sub)
+    action = "выдана" if is_new else "продлена"
+    await message.answer(
+        f"✅ Подписка {plan_title(plan)} {action} пользователю "
+        f"tg:<code>{user.tg_id}</code> до <b>{fmt_date(sub.expires_at)}</b>."
+    )
 
 
 @router.message(Command("reply"))

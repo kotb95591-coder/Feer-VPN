@@ -56,6 +56,23 @@ async def issue_or_extend(
     return sub, True
 
 
+async def admin_grant(
+    user: User, plan: str, days: int | None = None
+) -> tuple[Subscription, bool]:
+    """Выдаёт/продлевает подписку вручную (админом), без оплаты.
+
+    days=None — стандартный срок тарифа. Иначе — ровно days дней.
+    Внутри использует ту же логику выдачи ключа, что и при оплате.
+    """
+    tariff = get_tariff(plan)
+    if not tariff:
+        raise SubscriptionError(f"Неизвестный тариф: {plan}")
+    bonus_days = 0
+    if days is not None:
+        bonus_days = days - tariff["days"]
+    return await issue_or_extend(user, plan, bonus_days=bonus_days)
+
+
 async def disable_expired() -> int:
     """Отключает истёкшие подписки в Marzban и в БД."""
     subs = await repo.expired_subscriptions()
