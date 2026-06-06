@@ -15,6 +15,7 @@ from bot import create_bot, create_dispatcher
 from db.base import init_db
 
 _initialized = False
+_dispatcher = None
 
 
 def _ensure_init() -> None:
@@ -24,9 +25,24 @@ def _ensure_init() -> None:
         _initialized = True
 
 
+def _get_dispatcher():
+    """Dispatcher (с роутерами) создаём один раз на инстанс и кэшируем.
+
+    Роутеры в aiogram — модульные синглтоны: повторный include_router в
+    новый Dispatcher на «тёплом» инстансе Vercel падает с
+    RuntimeError: Router is already attached. Поэтому кэшируем Dispatcher.
+    Bot при этом создаём заново на каждый запрос (его aiohttp-сессия
+    привязана к event loop конкретного asyncio.run и закрывается в конце).
+    """
+    global _dispatcher
+    if _dispatcher is None:
+        _dispatcher = create_dispatcher()
+    return _dispatcher
+
+
 async def _process(update_data: dict) -> None:
     bot = create_bot()
-    dp = create_dispatcher()
+    dp = _get_dispatcher()
     try:
         update = Update.model_validate(update_data, context={"bot": bot})
         await dp.feed_update(bot, update)
