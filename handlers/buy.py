@@ -32,10 +32,24 @@ async def cb_plan(call: CallbackQuery, state: FSMContext) -> None:
         await call.answer("Неизвестный тариф", show_alert=True)
         return
     await state.update_data(plan=plan, price=tariff["price"], bonus_days=0, promocode=None)
+    # Сначала показываем правила — продолжить можно только после согласия.
+    await edit_or_send(call, texts.rules_text(tariff), inline.rules_confirm(plan))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("agree:"))
+async def cb_agree(call: CallbackQuery, state: FSMContext) -> None:
+    plan = call.data.split(":", 1)[1]
+    tariff = get_tariff(plan)
+    if not tariff:
+        await call.answer("Неизвестный тариф", show_alert=True)
+        return
+    await state.update_data(plan=plan, price=tariff["price"], bonus_days=0, promocode=None)
     text = (
         f"{tariff['emoji']} <b>{tariff['title']}</b>\n\n"
         f"Цена: <b>{tariff['price']} ₽</b> / {tariff['days']} дней\n"
         f"Устройства: <b>{tariff['desc']}</b>\n\n"
+        "✅ С правилами ознакомлен(а).\n"
         "Можно ввести промокод или сразу оплатить."
     )
     await edit_or_send(call, text, inline.buy_confirm(plan, tariff["price"]))

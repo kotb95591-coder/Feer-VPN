@@ -41,6 +41,14 @@ def buy_confirm(plan: str, price: int, promo_applied: bool = False) -> InlineKey
     return kb.as_markup()
 
 
+def rules_confirm(plan: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Согласен, продолжить", callback_data=f"agree:{plan}")
+    kb.button(text="❌ Отмена", callback_data="menu")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
 def payment_check(payment_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     if config.DA_DONATION_URL:
