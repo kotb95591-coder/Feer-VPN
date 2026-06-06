@@ -1,8 +1,8 @@
 # Feer VPN Telegram bot dependencies
 aiogram==3.13.1
 SQLAlchemy==2.0.35
-sqlalchemy-libsql==0.1.0
-libsql-experimental==0.0.41
+sqlalchemy-libsql==0.2.0
+libsql-experimental>=0.0.53
 python-dotenv==1.0.1
 aiohttp==3.10.10
 APScheduler==3.10.4
