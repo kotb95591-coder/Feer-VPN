@@ -68,6 +68,11 @@ BAN_MINUTES = int(os.environ.get("BAN_MINUTES", "30"))
 VPN_PORTS = os.environ.get("VPN_PORTS", "80,443,8443").replace(" ", "")
 BAN_STATE = os.environ.get("BAN_STATE", str(Path(__file__).resolve().parent / "bans.json"))
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+SEEN_STATE = os.environ.get("SEEN_STATE", str(Path(BAN_STATE).parent / "seen.json"))
+ADMIN_IDS = set()
+for _x in os.environ.get("ADMIN_IDS", "").replace(" ", "").split(","):
+    if _x.isdigit():
+        ADMIN_IDS.add(int(_x))
 
 _raw_url = os.environ.get("TURSO_DATABASE_URL", "")
 DB_URL = _raw_url.replace("libsql://", "https://").replace("wss://", "https://").rstrip("/")
@@ -181,6 +186,24 @@ def save_bans(bans):
         print("⚠️ Не могу сохранить " + BAN_STATE + ": " + str(e))
 
 
+def load_seen():
+    """Устойчивое время первого появления IP: {username: {ip: epoch}}."""
+    try:
+        with open(SEEN_STATE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_seen(seen):
+    try:
+        Path(SEEN_STATE).parent.mkdir(parents=True, exist_ok=True)
+        with open(SEEN_STATE, "w", encoding="utf-8") as f:
+            json.dump(seen, f)
+    except Exception as e:
+        print("⚠️ Не могу сохранить " + SEEN_STATE + ": " + str(e))
+
+
 # ---------- разбор лога ----------
 def parse_lines():
     if not os.path.exists(ACCESS_LOG):
@@ -288,30 +311,59 @@ def mark_blocked(sid, ip):
 
 
 def enforce(enforce_data, sub_map):
-    """Блокируем лишние IP через iptables. Оставляем 'старшие' IP в пределах лимита."""
+    """Блокируем лишние IP. Порядок «кто раньше» берём из устойчивого
+    state (seen.json), а НЕ из окна лога — поэтому ПЕРВОЕ устройство не банится никогда."""
     ensure_chain()
     bans = load_bans()
+    seen = load_seen()
     now = time.time()
     offenders = {}  # ip -> {username, tg_id, sid}
 
+    # 1) собираем активные IP по каждому ключу + самую раннюю метку из лога
+    active_by_user = {}  # username -> [sub, {ip: log_first_epoch}]
     for email, ips in enforce_data.items():
         sub = sub_map.get(email) or sub_map.get(_norm(email))
         if not sub:
             continue
-        limit = sub["limit"]
-        if len(ips) <= limit:
-            continue
-        # сортируем IP по времени ПЕРВОГО подключения: старшие = «свои»
-        ordered = sorted(ips.items(), key=lambda kv: kv[1][0])
-        keep = [ip for ip, _ in ordered[:limit]]
-        extra = [ip for ip, _ in ordered[limit:]]
         uname = email if email in sub_map else _norm(email)
-        print("🚫 " + uname + ": IP " + str(len(ips)) + "/" + str(limit)
+        cur = active_by_user.setdefault(uname, [sub, {}])
+        for ip, ts_pair in ips.items():
+            e = ts_pair[0].timestamp()
+            if ip not in cur[1] or e < cur[1][ip]:
+                cur[1][ip] = e
+
+    for uname, pair in active_by_user.items():
+        sub, ip_first = pair
+        # админов не трогаем вообще
+        if sub.get("tg_id") in ADMIN_IDS:
+            seen.pop(uname, None)
+            continue
+
+        active_ips = set(ip_first.keys())
+        user_seen = seen.setdefault(uname, {})
+        # фиксируем время первого появления IP (один раз, дальше не меняется)
+        for ip in active_ips:
+            if ip not in user_seen:
+                user_seen[ip] = ip_first[ip]
+        # убираем IP, которых сейчас нет в эфире — освобождаем слот
+        for ip in list(user_seen.keys()):
+            if ip not in active_ips:
+                del user_seen[ip]
+
+        limit = sub["limit"]
+        if len(active_ips) <= limit:
+            continue
+
+        # сортируем по устойчивому времени первого подключения: ранние = «свои»
+        ordered = sorted(active_ips, key=lambda ip: (user_seen.get(ip, now), ip))
+        keep = ordered[:limit]
+        extra = ordered[limit:]
+        print("🚫 " + uname + ": IP " + str(len(active_ips)) + "/" + str(limit)
               + " | оставляем " + ",".join(keep) + " | блок " + ",".join(extra))
         for ip in extra:
             offenders[ip] = {"username": uname, "tg_id": sub["tg_id"], "sid": sub["id"]}
 
-    # 1) баним / продлеваем лишние IP
+    # 2) баним / продлеваем лишние IP
     for ip, info in offenders.items():
         new_ban = ip not in bans
         ban_ip(ip)
@@ -326,7 +378,7 @@ def enforce(enforce_data, sub_map):
                 "Нужно больше устройств — оформи тариф «Семья».",
             )
 
-    # 2) снимаем истёкшие баны; остальные держим и гарантируем правило
+    # 3) снимаем истёкшие баны; остальные держим и гарантируем правило
     for ip in list(bans.keys()):
         if ip in offenders:
             continue
@@ -337,6 +389,7 @@ def enforce(enforce_data, sub_map):
             ban_ip(ip)  # самовосстановление после перезагрузки / flush
 
     save_bans(bans)
+    save_seen(seen)
     return len(offenders), len(bans)
 
 
