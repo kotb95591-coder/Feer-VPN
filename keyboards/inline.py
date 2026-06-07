@@ -136,23 +136,59 @@ def admin_menu() -> InlineKeyboardMarkup:
 def admin_promo_menu() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="➕ Создать промокод", callback_data="adm:promo_new")
+    kb.button(text="« К списку", callback_data="adm:promos")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def admin_promo_list(promos) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for p in promos:
+        mark = "✅" if p.active else "⛔"
+        kb.button(text=f"{mark} {p.code}", callback_data=f"adm:promo:{p.id}")
+    kb.button(text="➕ Создать промокод", callback_data="adm:promo_new")
     kb.button(text="« Назад", callback_data="admin")
     kb.adjust(1)
     return kb.as_markup()
 
 
-def admin_client_actions(user_id: int) -> InlineKeyboardMarkup:
+def admin_promo_card(promo) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✏️ Редактировать", callback_data=f"adm:promo_edit:{promo.id}")
+    toggle = "⛔ Выключить" if promo.active else "✅ Включить"
+    kb.button(text=toggle, callback_data=f"adm:promo_toggle:{promo.id}")
+    kb.button(text="🗑 Удалить", callback_data=f"adm:promo_del:{promo.id}")
+    kb.button(text="« К списку", callback_data="adm:promos")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def admin_promo_del_confirm(promo_id: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🗑 Да, удалить", callback_data=f"adm:promo_del_yes:{promo_id}")
+    kb.button(text="« Отмена", callback_data=f"adm:promo:{promo_id}")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def admin_client_actions(
+    user_id: int, can_disable: bool = False, can_enable: bool = False
+) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="🎁 Выдать Solo", callback_data=f"adm:give:{user_id}:solo")
     kb.button(text="🎁 Выдать Family", callback_data=f"adm:give:{user_id}:family")
     kb.button(text="➕ +30 дней", callback_data=f"adm:extend:{user_id}")
+    if can_disable:
+        kb.button(text="⛔ Отключить подписку", callback_data=f"adm:sub_off:{user_id}")
+    if can_enable:
+        kb.button(text="✅ Включить подписку", callback_data=f"adm:sub_on:{user_id}")
     kb.button(text="💰 +100 ₽", callback_data=f"adm:addbal:{user_id}:100")
     kb.button(text="💰 +500 ₽", callback_data=f"adm:addbal:{user_id}:500")
     kb.button(text="💰 Другая сумма", callback_data=f"adm:addbal_custom:{user_id}")
     kb.button(text="🚫 Бан", callback_data=f"adm:ban:{user_id}")
     kb.button(text="✅ Разбан", callback_data=f"adm:unban:{user_id}")
     kb.button(text="« К списку", callback_data="adm:clients")
-    kb.adjust(2, 1, 2, 1, 2, 1)
+    kb.adjust(2)
     return kb.as_markup()
 
 

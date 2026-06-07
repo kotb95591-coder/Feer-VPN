@@ -21,6 +21,7 @@ class AdminStates(StatesGroup):
     promo_percent = State()
     promo_fixed = State()
     promo_bonus = State()
+    promo_limit = State()
     # Визард выдачи подписки
     give_target = State()
     give_days = State()

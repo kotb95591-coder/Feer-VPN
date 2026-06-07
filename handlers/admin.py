@@ -18,6 +18,13 @@ log = logging.getLogger(__name__)
 router = Router(name="admin")
 
 _PLAN_LABEL = {"all": "Все тарифы", "solo": "Solo", "family": "Семья"}
+_SUB_STATUS_LABEL = {
+    "active": "активна",
+    "disabled": "отключена",
+    "expired": "приостановлена",
+    "banned": "забанена",
+    "pending": "ожидает оплаты",
+}
 
 
 def _is_admin(tg_id: int) -> bool:
@@ -42,20 +49,46 @@ async def _send(target, text: str, markup) -> None:
 
 
 async def _client_card_text(user) -> str:
-    sub = await repo.get_active_subscription(user.id)
+    active = await repo.get_active_subscription(user.id)
+    latest = await repo.get_latest_subscription(user.id)
     balance = await repo.get_balance(user.id)
     uname = f"@{user.username}" if user.username else "—"
-    sub_info = (
-        f"📦 Подписка: {plan_title(sub.plan)} до {fmt_date(sub.expires_at)}"
-        if sub
-        else "📦 Подписки нет"
-    )
+    show = active or latest
+    if not show:
+        sub_info = "📦 Подписки нет"
+    elif active:
+        sub_info = (
+            f"📦 Подписка: {plan_title(active.plan)} — активна "
+            f"до {fmt_date(active.expires_at)}"
+        )
+    else:
+        st = _SUB_STATUS_LABEL.get(latest.status, latest.status)
+        sub_info = (
+            f"📦 Подписка: {plan_title(latest.plan)} — {st} "
+            f"(до {fmt_date(latest.expires_at)})"
+        )
     return (
         f"👤 <b>Клиент</b> {uname}\n"
         f"tg: <code>{user.tg_id}</code>\n"
         f"Статус: {user.status} · нарушений: {user.violations}\n"
         f"💼 Баланс: {balance:.0f} ₽\n"
         f"{sub_info}"
+    )
+
+
+async def _client_markup(user):
+    """Клавиатура карточки клиента с учётом состояния подписки."""
+    active = await repo.get_active_subscription(user.id)
+    latest = await repo.get_latest_subscription(user.id)
+    can_disable = active is not None
+    can_enable = (
+        active is None
+        and latest is not None
+        and latest.status == "disabled"
+        and bool(latest.marzban_username)
+    )
+    return inline.admin_client_actions(
+        user.id, can_disable=can_disable, can_enable=can_enable
     )
 
 
@@ -140,7 +173,7 @@ async def cb_client(call: CallbackQuery, state: FSMContext) -> None:
     if not user:
         await call.answer("Не найден", show_alert=True)
         return
-    await edit_or_send(call, await _client_card_text(user), inline.admin_client_actions(user.id))
+    await edit_or_send(call, await _client_card_text(user), await _client_markup(user))
     await call.answer()
 
 
@@ -170,7 +203,7 @@ async def on_find_client(message: Message, state: FSMContext) -> None:
         )
         return
     await state.clear()
-    await message.answer(await _client_card_text(user), reply_markup=inline.admin_client_actions(user.id))
+    await message.answer(await _client_card_text(user), reply_markup=await _client_markup(user))
 
 
 @router.callback_query(F.data.startswith("adm:ban:"))
@@ -193,7 +226,7 @@ async def cb_ban(call: CallbackQuery) -> None:
                 pass
     await call.answer("Забанен", show_alert=True)
     user = await repo.get_user_by_id(user_id)
-    await edit_or_send(call, await _client_card_text(user), inline.admin_client_actions(user_id))
+    await edit_or_send(call, await _client_card_text(user), await _client_markup(user))
 
 
 @router.callback_query(F.data.startswith("adm:unban:"))
@@ -209,7 +242,7 @@ async def cb_unban_admin(call: CallbackQuery) -> None:
     await sub_service.unban_account(user)
     await call.answer("Разбанен", show_alert=True)
     user = await repo.get_user_by_id(user_id)
-    await edit_or_send(call, await _client_card_text(user), inline.admin_client_actions(user_id))
+    await edit_or_send(call, await _client_card_text(user), await _client_markup(user))
 
 
 @router.callback_query(F.data.startswith("adm:extend:"))
@@ -230,7 +263,71 @@ async def cb_extend(call: CallbackQuery) -> None:
         except MarzbanError:
             pass
     await call.answer("+30 дней", show_alert=True)
-    await edit_or_send(call, await _client_card_text(user), inline.admin_client_actions(user_id))
+    await edit_or_send(call, await _client_card_text(user), await _client_markup(user))
+
+
+# ---------------- Отключение / включение подписки ----------------
+
+@router.callback_query(F.data.startswith("adm:sub_off:"))
+async def cb_sub_off(call: CallbackQuery) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    user_id = int(call.data.split(":")[2])
+    user = await repo.get_user_by_id(user_id)
+    sub = await repo.get_active_subscription(user_id) if user else None
+    if not sub:
+        await call.answer("Нет активной подписки", show_alert=True)
+        return
+    await repo.set_subscription_status(sub.id, "disabled")
+    if sub.marzban_username:
+        try:
+            await marzban.ban(sub.marzban_username)
+        except MarzbanError as e:
+            log.error("Не удалось отключить %s в Marzban: %s", sub.marzban_username, e)
+            await call.answer(f"В БД отключено, но Marzban вернул ошибку: {e}", show_alert=True)
+            user = await repo.get_user_by_id(user_id)
+            await edit_or_send(call, await _client_card_text(user), await _client_markup(user))
+            return
+    try:
+        await call.bot.send_message(
+            user.tg_id, "⛔ Ваша подписка отключена администратором. Доступ приостановлен."
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    await call.answer("Подписка отключена (и в Marzban)", show_alert=True)
+    user = await repo.get_user_by_id(user_id)
+    await edit_or_send(call, await _client_card_text(user), await _client_markup(user))
+
+
+@router.callback_query(F.data.startswith("adm:sub_on:"))
+async def cb_sub_on(call: CallbackQuery) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    user_id = int(call.data.split(":")[2])
+    user = await repo.get_user_by_id(user_id)
+    sub = await repo.get_latest_subscription(user_id) if user else None
+    if not sub or sub.status != "disabled":
+        await call.answer("Нет отключённой подписки", show_alert=True)
+        return
+    await repo.set_subscription_status(sub.id, "active")
+    if sub.marzban_username:
+        try:
+            await marzban.unban(sub.marzban_username)
+        except MarzbanError as e:
+            log.error("Не удалось включить %s в Marzban: %s", sub.marzban_username, e)
+            await call.answer(f"В БД включено, но Marzban вернул ошибку: {e}", show_alert=True)
+            user = await repo.get_user_by_id(user_id)
+            await edit_or_send(call, await _client_card_text(user), await _client_markup(user))
+            return
+    try:
+        await call.bot.send_message(user.tg_id, "✅ Ваша подписка снова активна.")
+    except Exception:  # noqa: BLE001
+        pass
+    await call.answer("Подписка включена (и в Marzban)", show_alert=True)
+    user = await repo.get_user_by_id(user_id)
+    await edit_or_send(call, await _client_card_text(user), await _client_markup(user))
 
 
 # ---------------- Быстрая выдача с карточки клиента ----------------
@@ -254,7 +351,7 @@ async def cb_give_quick(call: CallbackQuery, bot: Bot) -> None:
     await _notify_granted(bot, user, plan, sub)
     action = "выдана" if is_new else "продлена"
     await call.answer(f"{plan_title(plan)} {action} до {fmt_date(sub.expires_at)}", show_alert=True)
-    await edit_or_send(call, await _client_card_text(user), inline.admin_client_actions(user.id))
+    await edit_or_send(call, await _client_card_text(user), await _client_markup(user))
 
 
 # ---------------- Визард выдачи подписки ----------------
@@ -423,7 +520,7 @@ async def on_addbal_amount(message: Message, state: FSMContext) -> None:
     except Exception:  # noqa: BLE001
         pass
     await state.clear()
-    await message.answer(await _client_card_text(user), reply_markup=inline.admin_client_actions(user.id))
+    await message.answer(await _client_card_text(user), reply_markup=await _client_markup(user))
 
 
 @router.callback_query(F.data.startswith("adm:addbal:"))
@@ -448,7 +545,7 @@ async def cb_addbal(call: CallbackQuery) -> None:
         pass
     await call.answer(f"Начислено {int(amount)} ₽. Баланс: {new_balance:.0f} ₽", show_alert=True)
     user = await repo.get_user_by_id(int(user_id_s))
-    await edit_or_send(call, await _client_card_text(user), inline.admin_client_actions(user.id))
+    await edit_or_send(call, await _client_card_text(user), await _client_markup(user))
 
 
 # ---------------- Ответ в поддержку ----------------
@@ -513,7 +610,111 @@ async def cb_promos(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     promos = await repo.list_promocodes()
     body = "\n".join(_promo_line(p) for p in promos) if promos else "Промокодов пока нет."
-    await edit_or_send(call, f"🏷 <b>Промокоды</b>\n\n{body}", inline.admin_promo_menu())
+    await edit_or_send(
+        call,
+        f"🏷 <b>Промокоды</b>\n\n{body}\n\nВыбери промокод для управления или создай новый:",
+        inline.admin_promo_list(promos),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("adm:promo_del_yes:"))
+async def cb_promo_del_yes(call: CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    promo_id = int(call.data.split(":")[2])
+    await repo.delete_promocode(promo_id)
+    await state.clear()
+    promos = await repo.list_promocodes()
+    body = "\n".join(_promo_line(p) for p in promos) if promos else "Промокодов пока нет."
+    await call.answer("Промокод удалён", show_alert=True)
+    await edit_or_send(call, f"🏷 <b>Промокоды</b>\n\n{body}", inline.admin_promo_list(promos))
+
+
+@router.callback_query(F.data.startswith("adm:promo_del:"))
+async def cb_promo_del(call: CallbackQuery) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    promo_id = int(call.data.split(":")[2])
+    promo = await repo.get_promocode_by_id(promo_id)
+    if not promo:
+        await call.answer("Не найден", show_alert=True)
+        return
+    await edit_or_send(
+        call,
+        f"🗑 Удалить промокод <code>{promo.code}</code>?\n\nЭто действие необратимо.",
+        inline.admin_promo_del_confirm(promo_id),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("adm:promo_toggle:"))
+async def cb_promo_toggle(call: CallbackQuery) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    promo_id = int(call.data.split(":")[2])
+    promo = await repo.get_promocode_by_id(promo_id)
+    if not promo:
+        await call.answer("Не найден", show_alert=True)
+        return
+    updated = await repo.update_promocode(promo_id, active=not promo.active)
+    await call.answer("Включён" if updated.active else "Выключен", show_alert=True)
+    await edit_or_send(
+        call,
+        f"🏷 <b>Промокод</b>\n\n{_promo_line(updated)}",
+        inline.admin_promo_card(updated),
+    )
+
+
+@router.callback_query(F.data.startswith("adm:promo_edit:"))
+async def cb_promo_edit(call: CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    promo_id = int(call.data.split(":")[2])
+    promo = await repo.get_promocode_by_id(promo_id)
+    if not promo:
+        await call.answer("Не найден", show_alert=True)
+        return
+    await state.clear()
+    await state.update_data(
+        edit_id=promo.id,
+        code=promo.code,
+        percent=int(promo.percent or 0),
+        fixed=int(promo.fixed_price or 0),
+        bonus=int(promo.bonus_days or 0),
+        limit=int(promo.usage_limit or 0),
+    )
+    await state.set_state(AdminStates.promo_percent)
+    await edit_or_send(
+        call,
+        f"✏️ <b>Редактирование</b> <code>{promo.code}</code>\n\n"
+        f"Текущая скидка: {int(promo.percent or 0)}%\n"
+        f"Шаг 1/5 — введи новый процент скидки в % (0 — без скидки):",
+        inline.admin_cancel(),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("adm:promo:"))
+async def cb_promo_card(call: CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    await state.clear()
+    promo_id = int(call.data.split(":")[2])
+    promo = await repo.get_promocode_by_id(promo_id)
+    if not promo:
+        await call.answer("Не найден", show_alert=True)
+        return
+    await edit_or_send(
+        call,
+        f"🏷 <b>Промокод</b>\n\n{_promo_line(promo)}",
+        inline.admin_promo_card(promo),
+    )
     await call.answer()
 
 
@@ -526,7 +727,7 @@ async def cb_promo_new(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminStates.promo_code)
     await edit_or_send(
         call,
-        "➕ <b>Новый промокод</b>\n\nШаг 1/5 — введи код (например SUMMER):",
+        "➕ <b>Новый промокод</b>\n\nШаг 1/6 — введи код (например SUMMER):",
         inline.admin_cancel(),
     )
     await call.answer()
@@ -546,7 +747,7 @@ async def on_promo_code(message: Message, state: FSMContext) -> None:
     await state.update_data(code=code)
     await state.set_state(AdminStates.promo_percent)
     await message.answer(
-        f"Код: <b>{code}</b>\n\nШаг 2/5 — процент скидки в % (0 — без скидки):",
+        f"Код: <b>{code}</b>\n\nШаг 2/6 — процент скидки в % (0 — без скидки):",
         reply_markup=inline.admin_cancel(),
     )
 
@@ -562,7 +763,7 @@ async def on_promo_percent(message: Message, state: FSMContext) -> None:
     await state.update_data(percent=val)
     await state.set_state(AdminStates.promo_fixed)
     await message.answer(
-        "Шаг 3/5 — спец-цена в ₽ для подписки (0 — без спец-цены):",
+        "Шаг 3/6 — спец-цена в ₽ для подписки (0 — без спец-цены):",
         reply_markup=inline.admin_cancel(),
     )
 
@@ -578,7 +779,7 @@ async def on_promo_fixed(message: Message, state: FSMContext) -> None:
     await state.update_data(fixed=val)
     await state.set_state(AdminStates.promo_bonus)
     await message.answer(
-        "Шаг 4/5 — бонусные дни к подписке (0 — без бонуса):",
+        "Шаг 4/6 — бонусные дни к подписке (0 — без бонуса):",
         reply_markup=inline.admin_cancel(),
     )
 
@@ -597,13 +798,32 @@ async def on_promo_bonus(message: Message, state: FSMContext) -> None:
     if percent == 0 and fixed == 0 and val == 0:
         await state.set_state(AdminStates.promo_percent)
         await message.answer(
-            "Промокод без эффектов. Укажи хотя бы один параметр.\n\nШаг 2/5 — процент скидки в % (0 — без скидки):",
+            "Промокод без эффектов. Укажи хотя бы один параметр.\n\nШаг 2/6 — процент скидки в % (0 — без скидки):",
             reply_markup=inline.admin_cancel(),
         )
         return
     await state.update_data(bonus=val)
+    await state.set_state(AdminStates.promo_limit)
+    await message.answer(
+        "Шаг 5/6 — сколько активаций у промокода (0 — без ограничения):",
+        reply_markup=inline.admin_cancel(),
+    )
+
+
+@router.message(AdminStates.promo_limit)
+async def on_promo_limit(message: Message, state: FSMContext) -> None:
+    if not _is_admin(message.from_user.id):
+        return
+    val = _parse_nonneg(message.text)
+    if val is None:
+        await message.answer("Введи целое число ≥ 0 (0 — без ограничения):", reply_markup=inline.admin_cancel())
+        return
+    await state.update_data(limit=val)
     await state.set_state(None)
-    await message.answer("Шаг 5/5 — для какого тарифа действует промокод?", reply_markup=inline.admin_promo_plan())
+    await message.answer(
+        "Шаг 6/6 — для какого тарифа действует промокод?",
+        reply_markup=inline.admin_promo_plan(),
+    )
 
 
 @router.callback_query(F.data.startswith("adm:promo_plan:"))
@@ -616,21 +836,35 @@ async def cb_promo_plan(call: CallbackQuery, state: FSMContext) -> None:
     code = data.get("code")
     if not code:
         await state.clear()
-        await edit_or_send(call, "⚠️ Сессия истекла, начни создание заново.", inline.admin_promo_menu())
+        await edit_or_send(call, "⚠️ Сессия истекла, начни заново.", inline.admin_promo_menu())
         await call.answer()
         return
     percent = int(data.get("percent", 0))
     fixed = int(data.get("fixed", 0))
     bonus = int(data.get("bonus", 0))
-    await repo.create_promocode(
-        code=code,
-        usage_limit=0,
-        only_new=False,
-        percent=float(percent),
-        fixed_price=float(fixed),
-        bonus_days=bonus,
-        target_plan=target,
-    )
+    limit = int(data.get("limit", 0))
+    edit_id = data.get("edit_id")
+    if edit_id:
+        await repo.update_promocode(
+            edit_id,
+            percent=float(percent),
+            fixed_price=float(fixed),
+            bonus_days=bonus,
+            usage_limit=limit,
+            target_plan=target,
+        )
+        verb = "обновлён"
+    else:
+        await repo.create_promocode(
+            code=code,
+            usage_limit=limit,
+            only_new=False,
+            percent=float(percent),
+            fixed_price=float(fixed),
+            bonus_days=bonus,
+            target_plan=target,
+        )
+        verb = "создан"
     await state.clear()
     effects = []
     if fixed > 0:
@@ -640,10 +874,12 @@ async def cb_promo_plan(call: CallbackQuery, state: FSMContext) -> None:
     if bonus > 0:
         effects.append(f"+{bonus} дней")
     eff = ", ".join(effects) if effects else "—"
+    limit_txt = limit if limit > 0 else "∞"
     await edit_or_send(
         call,
-        f"✅ Промокод <code>{code}</code> создан!\n\n"
+        f"✅ Промокод <code>{code}</code> {verb}!\n\n"
         f"Эффект: {eff}\n"
+        f"Активаций: {limit_txt}\n"
         f"Тариф: {_PLAN_LABEL.get(target, target)}",
         inline.admin_promo_menu(),
     )

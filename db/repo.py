@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Callable, TypeVar
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from config import config
@@ -223,6 +223,19 @@ async def get_resumable_subscription(user_id: int) -> Subscription | None:
             select(Subscription)
             .where(Subscription.user_id == user_id, Subscription.status == "expired")
             .order_by(Subscription.expires_at.desc())
+        )
+
+    return await run(_fn)
+
+
+async def get_latest_subscription(user_id: int) -> Subscription | None:
+    """Самая свежая подписка пользователя (любой статус, кроме pending)."""
+
+    def _fn(s: Session) -> Subscription | None:
+        return s.scalar(
+            select(Subscription)
+            .where(Subscription.user_id == user_id, Subscription.status != "pending")
+            .order_by(Subscription.id.desc())
         )
 
     return await run(_fn)
@@ -568,6 +581,50 @@ async def set_promocode_active(code: str, active: bool) -> None:
         promo = s.scalar(select(Promocode).where(Promocode.code == code.upper()))
         if promo:
             promo.active = active
+
+    await run(_fn)
+
+
+async def get_promocode_by_id(promo_id: int) -> Promocode | None:
+    return await run(lambda s: s.get(Promocode, promo_id))
+
+
+async def update_promocode(
+    promo_id: int,
+    percent: float | None = None,
+    fixed_price: float | None = None,
+    bonus_days: int | None = None,
+    usage_limit: int | None = None,
+    target_plan: str | None = None,
+    active: bool | None = None,
+) -> Promocode | None:
+    def _fn(s: Session) -> Promocode | None:
+        p = s.get(Promocode, promo_id)
+        if not p:
+            return None
+        if percent is not None:
+            p.percent = percent
+        if fixed_price is not None:
+            p.fixed_price = fixed_price
+        if bonus_days is not None:
+            p.bonus_days = bonus_days
+        if usage_limit is not None:
+            p.usage_limit = usage_limit
+        if target_plan is not None:
+            p.target_plan = target_plan
+        if active is not None:
+            p.active = active
+        return p
+
+    return await run(_fn)
+
+
+async def delete_promocode(promo_id: int) -> None:
+    def _fn(s: Session) -> None:
+        s.execute(delete(PromoRedemption).where(PromoRedemption.promo_id == promo_id))
+        p = s.get(Promocode, promo_id)
+        if p:
+            s.delete(p)
 
     await run(_fn)
 
