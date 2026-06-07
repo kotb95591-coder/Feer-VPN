@@ -1,6 +1,6 @@
 """«Моя подписка», ключ + QR, список устройств, экран бана и разбан."""
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -20,6 +20,14 @@ from utils.tg import edit_or_send
 
 log = logging.getLogger(__name__)
 router = Router(name="subscription")
+
+# Сервер и БД живут в UTC; пользователи — в Москве (UTC+3, без перехода на лето).
+_MSK_OFFSET = timedelta(hours=3)
+
+
+def _msk(dt: datetime) -> datetime:
+    """UTC-наивный datetime -> московское время для показа."""
+    return dt + _MSK_OFFSET
 
 
 @router.callback_query(F.data == "my_sub")
@@ -67,7 +75,7 @@ async def cb_devices(call: CallbackQuery) -> None:
             if online_at:
                 try:
                     dt = datetime.fromisoformat(str(online_at).replace("Z", ""))
-                    online_line = f"🟢 Последняя активность: <b>{fmt_datetime(dt)}</b>\n\n"
+                    online_line = f"🟢 Последняя активность: <b>{fmt_datetime(_msk(dt))}</b>\n\n"
                 except ValueError:
                     online_line = f"🟢 Последняя активность: <b>{online_at}</b>\n\n"
             else:
@@ -90,7 +98,8 @@ async def cb_devices(call: CallbackQuery) -> None:
         for i, d in enumerate(devices, 1):
             mark = "🚫" if d.status == "banned" else "✅"
             ident = (d.hwid or d.last_ip or d.first_ip or "—")
-            lines.append(f"{mark} {i}. <code>{ident}</code> · {fmt_datetime(d.last_seen)}")
+            seen = fmt_datetime(_msk(d.last_seen)) if d.last_seen else "—"
+            lines.append(f"{mark} {i}. <code>{ident}</code> · {seen}")
         body = "\n".join(lines)
     text = (
         f"📱 <b>Устройства</b> ({len(devices)}/{sub.device_limit})\n\n"
