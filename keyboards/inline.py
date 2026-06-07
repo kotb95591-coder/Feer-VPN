@@ -61,7 +61,7 @@ def payment_check(payment_id: int) -> InlineKeyboardMarkup:
 def my_sub_menu(banned: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     if not banned:
-        kb.button(text="📱 Мои устройства", callback_data="devices")
+        kb.button(text="📡 Мои подключения", callback_data="devices")
         kb.button(text="📲 Как подключиться", callback_data="howto")
     kb.button(text="« В меню", callback_data="menu")
     kb.adjust(1)

@@ -65,7 +65,7 @@ async def cb_agree(call: CallbackQuery, state: FSMContext) -> None:
     text = (
         f"{tariff['emoji']} <b>{tariff['title']}</b>\n\n"
         f"Цена: <b>{tariff['price']} ₽</b> / {tariff['days']} дней\n"
-        f"Устройства: <b>{tariff['desc']}</b>\n"
+        f"Подключения: <b>{tariff['desc']}</b>\n"
         f"💼 Баланс: <b>{balance:.0f} ₽</b>\n\n"
         "✅ С правилами ознакомлен(а).\n"
         "Оплата спишется с баланса. Можно ввести промокод или сразу оплатить."
@@ -81,7 +81,7 @@ async def _deliver_key(call: CallbackQuery, tariff: dict, sub, new_balance: floa
         "✅ <b>Подписка активна!</b>\n\n"
         f"Тариф: <b>{tariff['title']}</b>\n"
         f"Действует до: <b>{fmt_date(sub.expires_at)}</b>\n"
-        f"Устройства: <b>{tariff['desc']}</b>\n"
+        f"Подключения: <b>{tariff['desc']}</b>\n"
         f"💼 Остаток на балансе: <b>{new_balance:.0f} ₽</b>\n\n"
         "🔑 <b>Твой ключ</b> (нажми, чтобы скопировать):\n"
         f"<code>{key}</code>\n\n"

@@ -111,7 +111,7 @@ TARIFFS = {
         "devices": config.LIMIT_SOLO,
         "days": config.SUB_DAYS,
         "emoji": "👤",
-        "desc": "1 устройство",
+        "desc": "1 подключение",
     },
     "family": {
         "code": "family",
@@ -120,7 +120,7 @@ TARIFFS = {
         "devices": config.LIMIT_FAMILY,
         "days": config.SUB_DAYS,
         "emoji": "👪",
-        "desc": f"до {config.LIMIT_FAMILY} устройств на 1 ключе",
+        "desc": f"до {config.LIMIT_FAMILY} подключений на 1 ключе",
     },
 }
 

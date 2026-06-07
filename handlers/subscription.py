@@ -45,7 +45,7 @@ async def cb_my_sub(call: CallbackQuery) -> None:
         f"Тариф: <b>{plan_title(sub.plan)}</b>\n"
         f"Статус: <b>{'активна' if sub.status == 'active' else sub.status}</b>\n"
         f"Действует до: <b>{fmt_date(sub.expires_at)}</b> ({days_left(sub.expires_at)} дн.)\n"
-        f"Устройств: до <b>{sub.device_limit}</b>\n\n"
+        f"Подключений: до <b>{sub.device_limit}</b> (по IP)\n\n"
         f"Ключ:\n<code>{key}</code>"
     )
     # отправляем QR отдельным сообщением с клавиатурой
@@ -92,7 +92,7 @@ async def cb_devices(call: CallbackQuery) -> None:
 
     devices = await repo.list_devices(sub.id)
     if not devices:
-        body = "Пока нет активных подключений. Подключись по ключу — устройство появится здесь."
+        body = "Пока нет активных подключений. Подключись по ключу — оно появится здесь."
     else:
         lines = []
         for i, d in enumerate(devices, 1):
@@ -102,9 +102,10 @@ async def cb_devices(call: CallbackQuery) -> None:
             lines.append(f"{mark} {i}. <code>{ident}</code> · {seen}")
         body = "\n".join(lines)
     text = (
-        f"📱 <b>Устройства</b> ({len(devices)}/{sub.device_limit})\n\n"
+        f"📡 <b>Подключения</b> ({len(devices)}/{sub.device_limit})\n\n"
         f"{online_line}{body}\n\n"
-        "⚠️ Превышение лимита ведёт к бану лишнего устройства."
+        "ℹ️ Лимит считается по IP-адресам: устройства в одной сети — одно подключение.\n"
+        "⚠️ Превышение лимита ведёт к бану лишнего подключения."
     )
     if call.message.photo:
         await call.message.edit_caption(caption=text, reply_markup=inline.my_sub_menu())
