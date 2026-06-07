@@ -11,12 +11,10 @@ def main_menu(is_admin: bool = False, has_sub: bool = False) -> InlineKeyboardMa
     kb.button(text="💼 Личный кабинет", callback_data="cabinet")
     if has_sub:
         kb.button(text="🔑 Моя подписка", callback_data="my_sub")
-    kb.button(text="🏷 Промокод", callback_data="promo")
-    kb.button(text="📲 Как подключиться", callback_data="howto")
     kb.button(text="🆘 Поддержка", callback_data="support")
     if is_admin:
         kb.button(text="⚙️ Админ-панель", callback_data="admin")
-    kb.adjust(1, 1, 2, 2, 1)
+    kb.adjust(1)
     return kb.as_markup()
 
 
@@ -63,7 +61,6 @@ def payment_check(payment_id: int) -> InlineKeyboardMarkup:
 def my_sub_menu(banned: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     if not banned:
-        kb.button(text="🔄 Продлить", callback_data="buy")
         kb.button(text="📱 Мои устройства", callback_data="devices")
         kb.button(text="📲 Как подключиться", callback_data="howto")
     kb.button(text="« В меню", callback_data="menu")

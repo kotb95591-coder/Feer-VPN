@@ -1,5 +1,6 @@
 """«Моя подписка», ключ + QR, список устройств, экран бана и разбан."""
 import logging
+from datetime import datetime
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -14,6 +15,7 @@ from utils.helpers import gen_payment_code
 from utils.qr import make_qr
 from services.donationalerts import build_payment_instruction
 from services import subscription as sub_service
+from services.marzban import MarzbanError, marzban
 from utils.tg import edit_or_send
 
 log = logging.getLogger(__name__)
@@ -55,21 +57,54 @@ async def cb_devices(call: CallbackQuery) -> None:
     if not sub:
         await call.answer("Нет активной подписки", show_alert=True)
         return
+
+    # На serverless интервальных задач нет — тянем живые данные из Marzban прямо сейчас.
+    online_line = ""
+    if sub.marzban_username and marzban.enabled:
+        try:
+            muser = await marzban.get_user(sub.marzban_username)
+            online_at = muser.get("online_at") if isinstance(muser, dict) else None
+            if online_at:
+                try:
+                    dt = datetime.fromisoformat(str(online_at).replace("Z", ""))
+                    online_line = f"🟢 Последняя активность: <b>{fmt_datetime(dt)}</b>\n\n"
+                except ValueError:
+                    online_line = f"🟢 Последняя активность: <b>{online_at}</b>\n\n"
+            else:
+                online_line = "⚪️ Активных подключений сейчас не видно.\n\n"
+        except MarzbanError:
+            pass
+        # Если на сервере включён модуль IP-Limit — подтянем актуальные IP-устройства.
+        try:
+            ips = await marzban.get_active_ips(sub.marzban_username)
+            for ip in ips:
+                await repo.upsert_device(sub.id, None, ip)
+        except MarzbanError:
+            pass
+
     devices = await repo.list_devices(sub.id)
     if not devices:
-        body = "Пока нет подключённых устройств."
+        body = (
+            "Пока не вижу подключённых устройств по IP.\n"
+            "Поштучный список устройств доступен, если на сервере Marzban включён "
+            "модуль IP-Limit. Лимит по тарифу всё равно действует."
+        )
     else:
         lines = []
         for i, d in enumerate(devices, 1):
             mark = "🚫" if d.status == "banned" else "✅"
-            hwid = (d.hwid or d.first_ip or "—")[:18]
-            lines.append(f"{mark} {i}. <code>{hwid}</code> · {fmt_datetime(d.last_seen)}")
+            ident = (d.hwid or d.last_ip or d.first_ip or "—")
+            lines.append(f"{mark} {i}. <code>{ident}</code> · {fmt_datetime(d.last_seen)}")
         body = "\n".join(lines)
     text = (
-        f"📱 <b>Устройства</b> ({len(devices)}/{sub.device_limit})\n\n{body}\n\n"
+        f"📱 <b>Устройства</b> ({len(devices)}/{sub.device_limit})\n\n"
+        f"{online_line}{body}\n\n"
         "⚠️ Превышение лимита ведёт к бану лишнего устройства."
     )
-    await call.message.edit_caption(caption=text, reply_markup=inline.my_sub_menu()) if call.message.photo else await call.message.edit_text(text, reply_markup=inline.my_sub_menu())
+    if call.message.photo:
+        await call.message.edit_caption(caption=text, reply_markup=inline.my_sub_menu())
+    else:
+        await call.message.edit_text(text, reply_markup=inline.my_sub_menu())
     await call.answer()
 
 

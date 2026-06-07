@@ -11,7 +11,7 @@ from handlers import texts
 from keyboards import inline
 from services import promo as promo_service
 from services import subscription as sub_service
-from utils.helpers import fmt_date
+from utils.helpers import fmt_date, plan_title
 from utils.qr import make_qr
 from utils.tg import edit_or_send, edit_or_send_media
 
@@ -22,6 +22,19 @@ router = Router(name="buy")
 @router.callback_query(F.data == "buy")
 async def cb_buy(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
+    user = await repo.get_or_create_user(call.from_user.id, call.from_user.username)
+    active = await repo.get_active_subscription(user.id)
+    if active:
+        await edit_or_send(
+            call,
+            f"🔑 У тебя уже есть активная подписка <b>{plan_title(active.plan)}</b> "
+            f"до <b>{fmt_date(active.expires_at)}</b>.\n\n"
+            "Продление происходит автоматически с баланса — покупать ещё одну не нужно. "
+            "Просто держи баланс пополненным, и доступ не прервётся.",
+            inline.my_sub_menu(),
+        )
+        await call.answer()
+        return
     await edit_or_send_media(call, texts.tariffs_text(), inline.tariffs_menu(), config.IMG_TARIFFS)
     await call.answer()
 
@@ -99,6 +112,18 @@ async def cb_pay(call: CallbackQuery, state: FSMContext) -> None:
     promocode = data.get("promocode")
 
     user = await repo.get_or_create_user(call.from_user.id, call.from_user.username)
+
+    active = await repo.get_active_subscription(user.id)
+    if active:
+        await edit_or_send(
+            call,
+            "🔑 У тебя уже есть активная подписка — продление автоматическое с баланса. "
+            "Покупать ещё одну не нужно.",
+            inline.my_sub_menu(),
+        )
+        await call.answer()
+        return
+
     balance = await repo.get_balance(user.id)
 
     if balance < price:

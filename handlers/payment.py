@@ -91,11 +91,13 @@ async def _credit_topup(call: CallbackQuery, payment, bot: Bot) -> None:
         f"Зачислено: <b>{int(payment.amount)} ₽</b>\n"
         f"💰 Текущий баланс: <b>{new_balance:.0f} ₽</b>"
     )
-    resumed = await sub_service.resume_after_topup(user)
-    if resumed:
+    active = await repo.get_active_subscription(user.id)
+    if active:
+        text += "\n\n🔄 Подписка активна — продление спишется с баланса автоматически."
+    else:
         text += (
-            f"\n\n🔄 Подписка <b>{plan_title(resumed.plan)}</b> возобновлена "
-            f"до <b>{fmt_date(resumed.expires_at)}</b>."
+            "\n\nℹ️ Чтобы включить подписку, открой «🛍 Купить подписку» и выбери тариф — "
+            "деньги спишутся с баланса, дальше продление будет автоматическим."
         )
     await call.message.answer(text, reply_markup=inline.back_to_menu())
 
