@@ -95,6 +95,10 @@ def _safe_migrate() -> None:
 
     statements = [
         "ALTER TABLE users ADD COLUMN balance FLOAT DEFAULT 0",
+        "ALTER TABLE promocodes ADD COLUMN percent FLOAT DEFAULT 0",
+        "ALTER TABLE promocodes ADD COLUMN fixed_price FLOAT DEFAULT 0",
+        "ALTER TABLE promocodes ADD COLUMN bonus_days INTEGER DEFAULT 0",
+        "ALTER TABLE promocodes ADD COLUMN target_plan VARCHAR(16) DEFAULT 'all'",
     ]
     for stmt in statements:
         try:

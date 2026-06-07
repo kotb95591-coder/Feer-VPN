@@ -93,9 +93,6 @@ def cancel_kb() -> InlineKeyboardMarkup:
 def cabinet_menu(has_sub: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="💳 Пополнить баланс", callback_data="topup")
-    kb.button(text="🛍 Купить подписку", callback_data="buy")
-    if has_sub:
-        kb.button(text="🔑 Моя подписка", callback_data="my_sub")
     kb.button(text="🧾 История операций", callback_data="tx_history")
     kb.button(text="« В меню", callback_data="menu")
     kb.adjust(1)
@@ -130,7 +127,7 @@ def admin_menu() -> InlineKeyboardMarkup:
     kb.button(text="🏷 Промокоды", callback_data="adm:promos")
     kb.button(text="📢 Рассылка", callback_data="adm:broadcast")
     kb.button(text="🔍 Лог антифрода", callback_data="adm:fraud")
-    kb.button(text="🎁 Выдать подписку", callback_data="adm:give_help")
+    kb.button(text="🎁 Выдать подписку", callback_data="adm:give")
     kb.button(text="« В меню", callback_data="menu")
     kb.adjust(2, 2, 2, 1)
     return kb.as_markup()
@@ -149,10 +146,75 @@ def admin_client_actions(user_id: int) -> InlineKeyboardMarkup:
     kb.button(text="🎁 Выдать Solo", callback_data=f"adm:give:{user_id}:solo")
     kb.button(text="🎁 Выдать Family", callback_data=f"adm:give:{user_id}:family")
     kb.button(text="➕ +30 дней", callback_data=f"adm:extend:{user_id}")
-    kb.button(text="🚫 Бан", callback_data=f"adm:ban:{user_id}")
-    kb.button(text="✅ Разбан", callback_data=f"adm:unban:{user_id}")
     kb.button(text="💰 +100 ₽", callback_data=f"adm:addbal:{user_id}:100")
     kb.button(text="💰 +500 ₽", callback_data=f"adm:addbal:{user_id}:500")
-    kb.button(text="« Назад", callback_data="adm:clients")
-    kb.adjust(2, 1, 2, 2, 1)
+    kb.button(text="💰 Другая сумма", callback_data=f"adm:addbal_custom:{user_id}")
+    kb.button(text="🚫 Бан", callback_data=f"adm:ban:{user_id}")
+    kb.button(text="✅ Разбан", callback_data=f"adm:unban:{user_id}")
+    kb.button(text="« К списку", callback_data="adm:clients")
+    kb.adjust(2, 1, 2, 1, 2, 1)
+    return kb.as_markup()
+
+
+def admin_clients_list(users) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for u in users:
+        mark = "🚫" if u.status == "banned" else "✅"
+        name = f"@{u.username}" if u.username else f"id{u.tg_id}"
+        kb.button(text=f"{mark} {name}", callback_data=f"adm:client:{u.id}")
+    kb.button(text="🔎 Найти клиента", callback_data="adm:find_client")
+    kb.button(text="« Назад", callback_data="admin")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def admin_promo_plan() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🌐 Для всех", callback_data="adm:promo_plan:all")
+    kb.button(text="👤 Solo", callback_data="adm:promo_plan:solo")
+    kb.button(text="👨‍👩‍👧 Семья", callback_data="adm:promo_plan:family")
+    kb.button(text="« Отмена", callback_data="admin")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def admin_give_recipient() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="👤 Себе", callback_data="adm:give_self")
+    kb.button(text="🔎 Другому (ID/@username)", callback_data="adm:give_other")
+    kb.button(text="« Отмена", callback_data="admin")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def admin_give_plan() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for code, t in TARIFFS.items():
+        kb.button(text=f"{t['emoji']} {t['title']}", callback_data=f"adm:give_plan:{code}")
+    kb.button(text="« Отмена", callback_data="admin")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def admin_give_days() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="30 дней", callback_data="adm:give_days:30")
+    kb.button(text="60 дней", callback_data="adm:give_days:60")
+    kb.button(text="90 дней", callback_data="adm:give_days:90")
+    kb.button(text="📅 По тарифу", callback_data="adm:give_days:tariff")
+    kb.button(text="✏️ Другое", callback_data="adm:give_days_custom")
+    kb.button(text="« Отмена", callback_data="admin")
+    kb.adjust(3, 1, 1, 1)
+    return kb.as_markup()
+
+
+def admin_reply_kb(tg_id: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✏️ Ответить", callback_data=f"adm:reply:{tg_id}")
+    return kb.as_markup()
+
+
+def admin_cancel() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="« Отмена", callback_data="admin")
     return kb.as_markup()

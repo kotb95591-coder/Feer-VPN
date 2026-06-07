@@ -64,6 +64,13 @@ async def get_user_by_id(user_id: int) -> User | None:
     return await run(lambda s: s.get(User, user_id))
 
 
+async def get_user_by_username(username: str) -> User | None:
+    uname = username.lstrip("@").lower()
+    return await run(
+        lambda s: s.scalar(select(User).where(func.lower(User.username) == uname))
+    )
+
+
 async def set_user_status(tg_id: int, status: str, reason: str | None = None) -> None:
     def _fn(s: Session) -> None:
         user = s.scalar(select(User).where(User.tg_id == tg_id))
@@ -520,11 +527,15 @@ async def get_promocode(code: str) -> Promocode | None:
 
 async def create_promocode(
     code: str,
-    type_: str,
-    value: float,
+    type_: str = "combo",
+    value: float = 0.0,
     usage_limit: int = 0,
     only_new: bool = False,
     expires_at: datetime | None = None,
+    percent: float = 0.0,
+    fixed_price: float = 0.0,
+    bonus_days: int = 0,
+    target_plan: str = "all",
 ) -> Promocode:
     def _fn(s: Session) -> Promocode:
         promo = Promocode(
@@ -534,6 +545,10 @@ async def create_promocode(
             usage_limit=usage_limit,
             only_new=only_new,
             expires_at=expires_at,
+            percent=percent,
+            fixed_price=fixed_price,
+            bonus_days=bonus_days,
+            target_plan=target_plan,
         )
         s.add(promo)
         s.flush()

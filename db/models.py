@@ -131,9 +131,15 @@ class Promocode(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
-    # percent / fixed / bonus_days
-    type: Mapped[str] = mapped_column(String(16))
-    value: Mapped[float] = mapped_column(Float)
+    # legacy: percent / fixed / bonus_days (новые промокоды используют combo-поля)
+    type: Mapped[str] = mapped_column(String(16), default="combo")
+    value: Mapped[float] = mapped_column(Float, default=0.0)
+    # combo: можно комбинировать скидку %, спец-цену и бонусные дни
+    percent: Mapped[float] = mapped_column(Float, default=0.0)
+    fixed_price: Mapped[float] = mapped_column(Float, default=0.0)
+    bonus_days: Mapped[int] = mapped_column(Integer, default=0)
+    # all / solo / family — для какого тарифа действует промокод
+    target_plan: Mapped[str] = mapped_column(String(16), default="all")
     usage_limit: Mapped[int] = mapped_column(Integer, default=0)  # 0 = без лимита
     used_count: Mapped[int] = mapped_column(Integer, default=0)
     only_new: Mapped[bool] = mapped_column(Boolean, default=False)

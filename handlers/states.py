@@ -1,4 +1,4 @@
-"""FSM-состояния. Текстовый ввод используется ТОЛЬКО для промокодов и админки."""
+"""FSM-состояния. Текстовый ввод — для промокода, поддержки, пополнения и админ-визардов."""
 from aiogram.fsm.state import State, StatesGroup
 
 
@@ -15,8 +15,18 @@ class TopupStates(StatesGroup):
 
 
 class AdminStates(StatesGroup):
-    promo_code = State()
-    promo_type = State()
-    promo_value = State()
     broadcast_text = State()
-    extend_days = State()
+    # Визард создания промокода
+    promo_code = State()
+    promo_percent = State()
+    promo_fixed = State()
+    promo_bonus = State()
+    # Визард выдачи подписки
+    give_target = State()
+    give_days = State()
+    # Поиск клиента
+    find_client = State()
+    # Начисление баланса
+    addbal_amount = State()
+    # Ответ в поддержку
+    reply_text = State()

@@ -104,8 +104,8 @@ async def support_message(message: Message, state: FSMContext) -> None:
                 admin_id,
                 "🆘 <b>Новое сообщение в поддержку</b>\n"
                 f"От: {uname} · tg:<code>{message.from_user.id}</code>\n\n"
-                f"{body}\n\n"
-                f"Ответить: <code>/reply {message.from_user.id} текст</code>",
+                f"{body}",
+                reply_markup=inline.admin_reply_kb(message.from_user.id),
             )
             sent += 1
         except Exception as e:  # noqa: BLE001

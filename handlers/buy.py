@@ -161,7 +161,7 @@ async def cb_pay(call: CallbackQuery, state: FSMContext) -> None:
     # промокод успешно применён — фиксируем редемпцию
     if promocode:
         result = await promo_service.validate_and_apply(
-            promocode, user.id, int(tariff["price"])
+            promocode, user.id, int(tariff["price"]), plan=plan
         )
         if result.ok and result.promo:
             await promo_service.redeem(result.promo.id, user.id)

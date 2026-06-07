@@ -43,7 +43,7 @@ async def on_promo_code(message: Message, state: FSMContext) -> None:
     user = await repo.get_or_create_user(message.from_user.id, message.from_user.username)
 
     base_price = get_tariff(plan)["price"] if plan else get_tariff("solo")["price"]
-    result = await promo_service.validate_and_apply(code, user.id, base_price)
+    result = await promo_service.validate_and_apply(code, user.id, base_price, plan=plan)
 
     if not result.ok:
         await message.answer(f"❌ {result.message}", reply_markup=inline.cancel_kb())
