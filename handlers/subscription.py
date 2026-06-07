@@ -84,11 +84,7 @@ async def cb_devices(call: CallbackQuery) -> None:
 
     devices = await repo.list_devices(sub.id)
     if not devices:
-        body = (
-            "Пока не вижу подключённых устройств по IP.\n"
-            "Поштучный список устройств доступен, если на сервере Marzban включён "
-            "модуль IP-Limit. Лимит по тарифу всё равно действует."
-        )
+        body = "Пока нет активных подключений. Подключись по ключу — устройство появится здесь."
     else:
         lines = []
         for i, d in enumerate(devices, 1):
