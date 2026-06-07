@@ -98,13 +98,13 @@ def parse_log():
     """-> dict {email: {ip: last_seen_dt}} за окно WINDOW_MIN."""
     if not os.path.exists(ACCESS_LOG):
         sys.exit(f"❌ Нет файла лога: {ACCESS_LOG} (включи access-лог в xray_config.json)")
-    cutoff = datetime.now() - timedelta(minutes=WINDOW_MIN)
     data = {}
     try:
         with open(ACCESS_LOG, "r", encoding="utf-8", errors="ignore") as f:
             lines = f.readlines()[-5000:]
     except OSError as e:
         sys.exit(f"❌ Не могу прочитать {ACCESS_LOG}: {e}")
+    parsed = []
     for line in lines:
         m = LINE_RE.search(line)
         if not m:
@@ -113,10 +113,16 @@ def parse_log():
             ts = datetime.strptime(m.group("ts"), "%Y/%m/%d %H:%M:%S")
         except ValueError:
             continue
+        parsed.append((ts, m.group("email").strip(), m.group("ip")))
+    if not parsed:
+        return data
+    # Окно считаем ОТНОСИТЕЛЬНО последней записи в логе, а не по системным часам хоста:
+    # xray пишет в UTC, а хост может быть в другом TZ — так рассинхрона нет.
+    newest = max(ts for ts, _, _ in parsed)
+    cutoff = newest - timedelta(minutes=WINDOW_MIN)
+    for ts, email, ip in parsed:
         if ts < cutoff:
             continue
-        email = m.group("email").strip()
-        ip = m.group("ip")
         bucket = data.setdefault(email, {})
         if ip not in bucket or ts > bucket[ip]:
             bucket[ip] = ts
@@ -137,9 +143,13 @@ def main():
         if uname:
             sub_map[str(uname)] = int(sid)
 
+    def _norm(name: str) -> str:
+        # xray пишет email как "<id>.<username>" — отрезаем ведущий "<цифры>.".
+        return re.sub(r"^\d+\.", "", name)
+
     total = 0
     for email, ips in data.items():
-        sid = sub_map.get(email)
+        sid = sub_map.get(email) or sub_map.get(_norm(email))
         if not sid:
             continue
         for ip, ts in ips.items():
