@@ -52,7 +52,8 @@ class MarzbanClient:
             "username": config.MARZBAN_USERNAME,
             "password": config.MARZBAN_PASSWORD,
         }
-        async with session.post(url, data=data) as r:
+        ssl = None if config.MARZBAN_VERIFY_SSL else False
+        async with session.post(url, data=data, ssl=ssl) as r:
             if r.status != 200:
                 raise MarzbanError(f"Авторизация Marzban не удалась: {r.status}")
             payload = await r.json()
@@ -68,7 +69,8 @@ class MarzbanClient:
             token = await self._get_token(session)
             headers = {"Authorization": f"Bearer {token}"}
             url = f"{config.MARZBAN_BASE_URL}{path}"
-            async with session.request(method, url, json=json, headers=headers) as r:
+            ssl = None if config.MARZBAN_VERIFY_SSL else False
+            async with session.request(method, url, json=json, headers=headers, ssl=ssl) as r:
                 text = await r.text()
                 if r.status >= 400:
                     raise MarzbanError(f"{method} {path} -> {r.status}: {text}")

@@ -49,8 +49,10 @@ class Config:
     MARZBAN_BASE_URL = _get("MARZBAN_BASE_URL", "").rstrip("/")
     MARZBAN_USERNAME = _get("MARZBAN_USERNAME", "")
     MARZBAN_PASSWORD = _get("MARZBAN_PASSWORD", "")
-    MARZBAN_INBOUND_TAG = _get("MARZBAN_INBOUND_TAG", "VLESS TCP REALITY")
+    MARZBAN_INBOUND_TAG = _get("MARZBAN_INBOUND_TAG", "VLESS WS CDN")
     MARZBAN_PROXY_PROTOCOL = _get("MARZBAN_PROXY_PROTOCOL", "vless")
+    # Если панель Marzban работает по самоподписанному сертификату (без домена) — ставим false.
+    MARZBAN_VERIFY_SSL = _get("MARZBAN_VERIFY_SSL", "true").lower() == "true"
 
     # ---- DonationAlerts ----
     DA_ACCESS_TOKEN = _get("DA_ACCESS_TOKEN", "")
