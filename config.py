@@ -88,7 +88,7 @@ class Config:
     # ---- Оплата / Баланс ----
     PAYMENT_TIMEOUT_MIN = _int("PAYMENT_TIMEOUT_MIN", 30)
     # Минимальная сумма пополнения баланса (₽)
-    MIN_TOPUP = _int("MIN_TOPUP", 50)
+    MIN_TOPUP = _int("MIN_TOPUP", 10)
     # Пресеты сумм пополнения (кнопки в личном кабинете)
     TOPUP_PRESETS = [
         int(x)
