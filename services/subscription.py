@@ -32,21 +32,30 @@ async def issue_or_extend(
     existing = await repo.get_active_subscription(user.id)
 
     if existing and existing.plan == plan and existing.marzban_username:
-        # продлеваем тот же ключ
+        # пробуем продлить тот же ключ
         try:
             await marzban.renew(existing.marzban_username, days)
         except MarzbanError as e:
-            raise SubscriptionError(f"Marzban: {e}") from e
+            # ключ в Marzban отсутствует/битый — перевыпускаем на той же подписке
+            log.warning(
+                "Продление ключа %s не удалось (%s) — выпускаю заново",
+                existing.marzban_username,
+                e,
+            )
+            try:
+                username, vless = await _create_key(user, plan, days)
+            except MarzbanError as e2:
+                raise SubscriptionError(f"Marzban: {e2}") from e2
+            sub = await repo.activate_subscription(existing.id, username, vless, days)
+            return (sub or existing), False
         await repo.extend_subscription(existing.id, days)
         log.info("Подписка %s продлена на %s дн.", existing.id, days)
         return existing, False
 
     # новая подписка
     sub = await repo.create_subscription(user.id, plan, tariff["devices"])
-    username = gen_marzban_username(user.tg_id)
     try:
-        await marzban.create_user(username, days, tariff["devices"])
-        vless = await marzban.get_vless_link(username)
+        username, vless = await _create_key(user, plan, days)
     except MarzbanError as e:
         await repo.set_subscription_status(sub.id, "expired")
         raise SubscriptionError(f"Marzban: {e}") from e
@@ -54,6 +63,22 @@ async def issue_or_extend(
     sub = await repo.activate_subscription(sub.id, username, vless, days)
     log.info("Выдана новая подписка %s (%s)", sub.id, username)
     return sub, True
+
+
+async def _create_key(user: User, plan: str, days: int) -> tuple[str, str]:
+    """Создаёт юзера в Marzban и возвращает (username, vless_link).
+
+    Ссылку берём прямо из ответа на создание (POST уже содержит links),
+    без отдельного GET — чтобы не упираться в гонку read-after-write
+    (404 сразу после создания).
+    """
+    tariff = get_tariff(plan)
+    username = gen_marzban_username(user.tg_id)
+    created = await marzban.create_user(username, days, tariff["devices"])
+    vless = marzban.link_from_user(created)
+    if not vless:
+        vless = await marzban.get_vless_link(username)
+    return username, vless
 
 
 async def admin_grant(

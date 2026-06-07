@@ -4,6 +4,7 @@
 Одна подписка = один Marzban-юзер = один VLESS-ключ.
 Лимит одновременных устройств задаётся через поле ip_limit (доп-модуль Marzban IP-Limit).
 """
+import asyncio
 import logging
 import time
 from datetime import datetime, timedelta
@@ -104,8 +105,31 @@ class MarzbanClient:
         }
         return await self._request("POST", "/api/user", json=body)
 
-    async def get_user(self, username: str) -> dict:
-        return await self._request("GET", f"/api/user/{username}")
+    @staticmethod
+    def link_from_user(user: dict | None) -> str | None:
+        """Достаёт прямую vless:// ссылку (или subscription_url) прямо из ответа Marzban."""
+        if not isinstance(user, dict):
+            return None
+        for link in (user.get("links") or []):
+            if isinstance(link, str) and link.startswith("vless://"):
+                return link
+        sub = user.get("subscription_url") or ""
+        if isinstance(sub, str) and sub:
+            return f"{config.MARZBAN_BASE_URL}{sub}" if sub.startswith("/") else sub
+        return None
+
+    async def get_user(self, username: str, retries: int = 3) -> dict:
+        """GET юзера с мягким ретраем на 404 (read-after-write в Marzban)."""
+        last: Exception | None = None
+        for attempt in range(retries):
+            try:
+                return await self._request("GET", f"/api/user/{username}")
+            except MarzbanError as e:
+                last = e
+                if "404" not in str(e) or attempt == retries - 1:
+                    raise
+                await asyncio.sleep(0.6)
+        raise last  # pragma: no cover
 
     async def get_subscription_url(self, username: str) -> str:
         """Подписочная ссылка (subscription_url) — её клиент импортирует в приложение."""
