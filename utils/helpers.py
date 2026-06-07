@@ -3,6 +3,7 @@ import random
 import secrets
 import string
 from datetime import datetime
+from urllib.parse import quote
 
 
 def gen_payment_code(prefix: str = "FEER") -> str:
@@ -16,6 +17,19 @@ def gen_marzban_username(tg_id: int) -> str:
     """Имя юзера в Marzban: feer_<tg_id>_<rnd>."""
     rnd = "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(4))
     return f"feer_{tg_id}_{rnd}"
+
+
+def label_vless_link(link: str, sub_id: int) -> str:
+    """Переименовывает конфиг в приложении: фрагмент после # становится 'FeerVPN (#<id>)'.
+
+    Клиентские приложения показывают именно этот фрагмент как название подключения.
+    Не vless:// ссылки (напр. subscription_url) оставляем как есть.
+    """
+    if not link or not link.startswith("vless://"):
+        return link
+    name = f"FeerVPN (#{sub_id})"
+    base = link.split("#", 1)[0]
+    return f"{base}#{quote(name)}"
 
 
 def gen_referral_code(tg_id: int) -> str:
