@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FeerVPN — быстрый VPN без лишних слов</title>
+<meta name="description" content="FeerVPN — быстрый и надёжный VPN. Обход блокировок, без логов, подключение за минуту через Telegram-бота." />
+<meta property="og:title" content="FeerVPN — быстрый VPN" />
+<meta property="og:description" content="Обход блокировок, без логов, подключение за минуту." />
+<meta property="og:type" content="website" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #050506;
+    --bg-soft: #0c0c0f;
+    --panel: #111114;
+    --panel-2: #16161b;
+    --line: rgba(255, 255, 255, 0.10);
+    --line-strong: rgba(255, 255, 255, 0.18);
+    --fg: #f5f5f7;
+    --muted: #9a9aa3;
+    --muted-2: #6e6e78;
+    --white: #ffffff;
+    --radius: 18px;
+    --radius-sm: 12px;
+    --maxw: 1120px;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --display: "Space Grotesk", var(--font);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  a { color: inherit; text-decoration: none; }
+  ::selection { background: var(--white); color: #000; }
+
+  .wrap { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  section { position: relative; }
+
+  /* ---------- NAV ---------- */
+  header {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(14px);
+    background: rgba(5, 5, 6, 0.72);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 700; font-size: 19px; letter-spacing: -0.02em; }
+  .brand-mark {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(145deg, #fff, #b9b9c0);
+    color: #000; display: grid; place-items: center;
+    font-weight: 700; font-size: 16px; box-shadow: 0 0 24px rgba(255,255,255,0.18);
+  }
+  .nav-links { display: flex; align-items: center; gap: 30px; }
+  .nav-links a.link { color: var(--muted); font-size: 14.5px; font-weight: 500; transition: color .2s; }
+  .nav-links a.link:hover { color: var(--fg); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    font-weight: 600; font-size: 14.5px; line-height: 1;
+    padding: 12px 20px; border-radius: 999px; border: 1px solid transparent;
+    cursor: pointer; transition: transform .15s ease, background .2s, border-color .2s, opacity .2s;
+    white-space: nowrap;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: var(--white); color: #000; }
+  .btn-primary:hover { opacity: .9; }
+  .btn-ghost { background: transparent; color: var(--fg); border-color: var(--line-strong); }
+  .btn-ghost:hover { background: rgba(255,255,255,0.06); border-color: var(--fg); }
+  .btn-lg { padding: 16px 28px; font-size: 16px; }
+
+  /* ---------- HERO ---------- */
+  .hero { padding: 96px 0 80px; text-align: center; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: -40% 0 auto 0; height: 720px; z-index: -1;
+    background: radial-gradient(60% 60% at 50% 0%, rgba(255,255,255,0.14), transparent 70%);
+    pointer-events: none;
+  }
+  .hero-grid {
+    position: absolute; inset: 0; z-index: -1; opacity: .35;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(60% 50% at 50% 30%, #000 30%, transparent 75%);
+    -webkit-mask-image: radial-gradient(60% 50% at 50% 30%, #000 30%, transparent 75%);
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line-strong);
+    background: rgba(255,255,255,0.04); color: var(--muted);
+    font-size: 13px; font-weight: 500; margin-bottom: 28px;
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: #38e07b; box-shadow: 0 0 10px #38e07b; }
+  h1 {
+    font-family: var(--display); font-weight: 700;
+    font-size: clamp(40px, 7vw, 76px); line-height: 1.02; letter-spacing: -0.035em;
+    max-width: 16ch; margin: 0 auto 22px;
+  }
+  h1 .grad { background: linear-gradient(180deg, #fff, #8a8a92); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p.sub { font-size: clamp(16px, 2.2vw, 20px); color: var(--muted); max-width: 56ch; margin: 0 auto 38px; }
+  .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .hero-note { margin-top: 18px; font-size: 13.5px; color: var(--muted-2); }
+
+  /* ---------- STATS ---------- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line);
+    border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin-top: 64px; }
+  .stat { background: var(--bg-soft); padding: 28px 20px; text-align: center; }
+  .stat .num { font-family: var(--display); font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+  .stat .lbl { color: var(--muted); font-size: 13.5px; margin-top: 4px; }
+
+  /* ---------- SECTION HEADERS ---------- */
+  .sec { padding: 92px 0; }
+  .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); }
+  .sec h2 { font-family: var(--display); font-weight: 700; font-size: clamp(28px, 4.4vw, 44px); letter-spacing: -0.03em; margin: 14px 0 0; max-width: 18ch; }
+  .sec .lead { color: var(--muted); font-size: 17px; max-width: 60ch; margin-top: 14px; }
+  .sec-head { margin-bottom: 48px; }
+
+  /* ---------- FEATURES ---------- */
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .feature {
+    background: linear-gradient(180deg, var(--panel), var(--bg-soft));
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 28px; transition: transform .2s ease, border-color .2s;
+  }
+  .feature:hover { transform: translateY(-4px); border-color: var(--line-strong); }
+  .feature .ic {
+    width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--line); font-size: 22px; margin-bottom: 18px;
+  }
+  .feature h3 { font-size: 18.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .feature p { color: var(--muted); font-size: 15px; margin-top: 8px; }
+
+  /* ---------- STEPS ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: step; }
+  .step { background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; position: relative; }
+  .step .n { font-family: var(--display); font-size: 14px; font-weight: 700; color: #000; background: var(--white);
+    width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; margin-bottom: 18px; }
+  .step h3 { font-size: 18px; font-weight: 600; }
+  .step p { color: var(--muted); font-size: 15px; margin-top: 8px; }
+
+  /* ---------- PRICING ---------- */
+  .pricing { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; max-width: 820px; margin: 0 auto; }
+  .plan { background: linear-gradient(180deg, var(--panel), var(--bg-soft)); border: 1px solid var(--line);
+    border-radius: 22px; padding: 34px; position: relative; }
+  .plan.featured { border-color: var(--line-strong); box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 30px 80px -40px rgba(255,255,255,0.25); }
+  .plan .tag { position: absolute; top: 20px; right: 20px; font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 999px; background: var(--white); color: #000; }
+  .plan .pname { font-family: var(--display); font-size: 22px; font-weight: 700; }
+  .plan .pdesc { color: var(--muted); font-size: 14.5px; margin-top: 4px; }
+  .plan .price { display: flex; align-items: baseline; gap: 6px; margin: 22px 0 4px; }
+  .plan .price .amt { font-family: var(--display); font-size: 46px; font-weight: 700; letter-spacing: -0.03em; }
+  .plan .price .per { color: var(--muted); font-size: 15px; }
+  .plan ul { list-style: none; margin: 22px 0 28px; display: grid; gap: 12px; }
+  .plan li { display: flex; gap: 11px; align-items: flex-start; font-size: 15px; color: #d7d7dc; }
+  .plan li .ch { color: #fff; flex: 0 0 auto; margin-top: 2px; }
+  .plan .btn { width: 100%; }
+
+  /* ---------- FAQ ---------- */
+  .faq { max-width: 760px; margin: 0 auto; }
+  .qa { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-soft); margin-bottom: 12px; overflow: hidden; }
+  .qa summary { list-style: none; cursor: pointer; padding: 20px 22px; font-weight: 600; font-size: 16px;
+    display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .qa summary::-webkit-details-marker { display: none; }
+  .qa summary .plus { color: var(--muted); font-size: 22px; font-weight: 400; transition: transform .2s; }
+  .qa[open] summary .plus { transform: rotate(45deg); }
+  .qa .ans { padding: 0 22px 20px; color: var(--muted); font-size: 15px; }
+
+  /* ---------- CTA ---------- */
+  .cta-band { text-align: center; padding: 80px 0 100px; }
+  .cta-box { border: 1px solid var(--line-strong); border-radius: 28px; padding: 64px 32px;
+    background: radial-gradient(70% 120% at 50% 0%, rgba(255,255,255,0.10), transparent 70%), var(--bg-soft); }
+  .cta-box h2 { font-family: var(--display); font-size: clamp(30px, 5vw, 50px); font-weight: 700; letter-spacing: -0.03em; }
+  .cta-box p { color: var(--muted); font-size: 18px; margin: 14px auto 30px; max-width: 48ch; }
+
+  /* ---------- FOOTER ---------- */
+  footer { border-top: 1px solid var(--line); padding: 40px 0; }
+  .foot { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .foot .brand { font-size: 16px; }
+  .foot .links { display: flex; gap: 24px; }
+  .foot .links a { color: var(--muted); font-size: 14px; }
+  .foot .links a:hover { color: var(--fg); }
+  .foot .copy { color: var(--muted-2); font-size: 13px; width: 100%; }
+
+  /* ---------- RESPONSIVE ---------- */
+  @media (max-width: 900px) {
+    .features, .steps { grid-template-columns: 1fr 1fr; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .nav-links .link { display: none; }
+  }
+  @media (max-width: 600px) {
+    .features, .steps, .pricing { grid-template-columns: 1fr; }
+    .hero { padding: 64px 0 56px; }
+    .sec { padding: 64px 0; }
+    .cta-box { padding: 44px 22px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a href="#top" class="brand"><span class="brand-mark">F</span> FeerVPN</a>
+    <nav class="nav-links">
+      <a class="link" href="#features">Возможности</a>
+      <a class="link" href="#how">Как это работает</a>
+      <a class="link" href="#pricing">Тарифы</a>
+      <a class="link" href="#faq">Вопросы</a>
+      <a class="btn btn-primary" href="https://t.me/feervpn_bot" target="_blank" rel="noopener">Открыть в Telegram</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-grid"></div>
+    <div class="wrap">
+      <span class="pill"><span class="dot"></span> Работает там, где другие не работают</span>
+      <h1>Быстрый VPN <span class="grad">без лишних слов</span></h1>
+      <p class="sub">Обход блокировок, стабильная скорость и полная приватность. Подключение за одну минуту прямо в Telegram — без настроек и личных данных.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary btn-lg" href="https://t.me/feervpn_bot" target="_blank" rel="noopener">Подключить за 1 минуту</a>
+        <a class="btn btn-ghost btn-lg" href="#pricing">Смотреть тарифы</a>
+      </div>
+      <p class="hero-note">Без логов · Без привязки к личности · Оплата картой РФ</p>
+
+      <div class="stats">
+        <div class="stat"><div class="num">&lt;1 мин</div><div class="lbl">на подключение</div></div>
+        <div class="stat"><div class="num">24/7</div><div class="lbl">доступ и поддержка</div></div>
+        <div class="stat"><div class="num">0</div><div class="lbl">логов и слежки</div></div>
+        <div class="stat"><div class="num">от 100₽</div><div class="lbl">в месяц</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="sec" id="features">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Возможности</span>
+        <h2>Всё, что нужно — и ничего лишнего</h2>
+        <p class="lead">Мы убрали всё лишнее и оставили главное: быстрый доступ без ограничений.</p>
+      </div>
+      <div class="features">
+        <div class="feature"><div class="ic">⚡</div><h3>Высокая скорость</h3><p>Стриминг в 4K, звонки и загрузки без просадок. Серверы оптимизированы под нагрузку.</p></div>
+        <div class="feature"><div class="ic">🛡️</div><h3>Обход блокировок</h3><p>Современный протокол VLESS маскирует трафик и работает даже при жёстких ограничениях.</p></div>
+        <div class="feature"><div class="ic">🔒</div><h3>Ноль логов</h3><p>Мы не храним историю посещений и не продаём данные. Ваша активность — только ваша.</p></div>
+        <div class="feature"><div class="ic">📱</div><h3>Несколько устройств</h3><p>Одна подписка — телефон, ноутбук и планшет. Тариф «Семья» — до трёх одновременно.</p></div>
+        <div class="feature"><div class="ic">🤖</div><h3>Всё в Telegram</h3><p>Покупка, ключ, продление и поддержка — в одном боте. Без сайтов и личных кабинетов.</p></div>
+        <div class="feature"><div class="ic">💳</div><h3>Простая оплата</h3><p>Карты РФ и пополнение баланса. Автопродление можно включить или выключить.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW -->
+  <section class="sec" id="how" style="background:var(--bg-soft);border-top:1px solid var(--line);border-bottom:1px solid var(--line);">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Как это работает</span>
+        <h2>Три шага до свободного интернета</h2>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="n">1</div><h3>Откройте бота</h3><p>Нажмите «Подключить» и запустите @feervpn_bot в Telegram. Регистрация не нужна.</p></div>
+        <div class="step"><div class="n">2</div><h3>Выберите тариф</h3><p>Solo или Семья. Оплатите картой — ключ выдаётся мгновенно.</p></div>
+        <div class="step"><div class="n">3</div><h3>Подключитесь</h3><p>Отсканируйте QR или вставьте ключ в приложение — и интернет без границ.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section class="sec" id="pricing">
+    <div class="wrap">
+      <div class="sec-head" style="text-align:center;">
+        <span class="eyebrow">Тарифы</span>
+        <h2 style="margin-left:auto;margin-right:auto;">Простые цены без сюрпризов</h2>
+        <p class="lead" style="margin-left:auto;margin-right:auto;">Оплата помесячно. Отменить можно в любой момент.</p>
+      </div>
+      <div class="pricing">
+        <div class="plan">
+          <div class="pname">Solo</div>
+          <div class="pdesc">Для одного устройства</div>
+          <div class="price"><span class="amt">100₽</span><span class="per">/ месяц</span></div>
+          <ul>
+            <li><span class="ch">✓</span> 1 устройство</li>
+            <li><span class="ch">✓</span> Безлимитный трафик</li>
+            <li><span class="ch">✓</span> Максимальная скорость</li>
+            <li><span class="ch">✓</span> Поддержка в Telegram</li>
+          </ul>
+          <a class="btn btn-ghost" href="https://t.me/feervpn_bot" target="_blank" rel="noopener">Выбрать Solo</a>
+        </div>
+        <div class="plan featured">
+          <span class="tag">Выгодно</span>
+          <div class="pname">Семья</div>
+          <div class="pdesc">Для всех устройств и близких</div>
+          <div class="price"><span class="amt">249₽</span><span class="per">/ месяц</span></div>
+          <ul>
+            <li><span class="ch">✓</span> До 3 устройств одновременно</li>
+            <li><span class="ch">✓</span> Безлимитный трафик</li>
+            <li><span class="ch">✓</span> Максимальная скорость</li>
+            <li><span class="ch">✓</span> Приоритетная поддержка</li>
+          </ul>
+          <a class="btn btn-primary" href="https://t.me/feervpn_bot" target="_blank" rel="noopener">Выбрать Семью</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="sec" id="faq" style="background:var(--bg-soft);border-top:1px solid var(--line);">
+    <div class="wrap">
+      <div class="sec-head" style="text-align:center;">
+        <span class="eyebrow">Вопросы</span>
+        <h2 style="margin-left:auto;margin-right:auto;">Частые вопросы</h2>
+      </div>
+      <div class="faq">
+        <details class="qa"><summary>Нужно ли что-то настраивать? <span class="plus">+</span></summary><div class="ans">Нет. Бот выдаёт готовый ключ и QR-код. Достаточно установить бесплатное приложение и вставить ключ — подскажем, какое и как.</div></details>
+        <details class="qa"><summary>На каких устройствах работает? <span class="plus">+</span></summary><div class="ans">iOS, Android, Windows и macOS. Одна подписка подходит для любых платформ.</div></details>
+        <details class="qa"><summary>Вы храните мои данные? <span class="plus">+</span></summary><div class="ans">Мы не ведём логи посещений и не привязываем трафик к личности. Для работы нужен только Telegram-аккаунт.</div></details>
+        <details class="qa"><summary>Можно ли отменить подписку? <span class="plus">+</span></summary><div class="ans">Да. Оплата помесячная, автопродление отключается в один клик в боте.</div></details>
+        <details class="qa"><summary>Что если не заработает? <span class="plus">+</span></summary><div class="ans">Напишите в поддержку прямо в боте — поможем быстро и при необходимости вернём средства.</div></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-band">
+    <div class="wrap">
+      <div class="cta-box">
+        <h2>Готовы попробовать?</h2>
+        <p>Подключитесь прямо сейчас — это займёт меньше минуты.</p>
+        <a class="btn btn-primary btn-lg" href="https://t.me/feervpn_bot" target="_blank" rel="noopener">Открыть FeerVPN в Telegram</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <a href="#top" class="brand"><span class="brand-mark">F</span> FeerVPN</a>
+    <div class="links">
+      <a href="#features">Возможности</a>
+      <a href="#pricing">Тарифы</a>
+      <a href="#faq">Вопросы</a>
+      <a href="https://t.me/feervpn_bot" target="_blank" rel="noopener">Telegram</a>
+    </div>
+    <div class="copy">© 2026 FeerVPN. Все права защищены.</div>
+  </div>
+</footer>
+
+</body>
+</html>
