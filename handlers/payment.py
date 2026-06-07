@@ -12,7 +12,7 @@ from keyboards import inline
 from services import promo as promo_service
 from services import subscription as sub_service
 from services.donationalerts import DonationAlertsError, donation_alerts
-from utils.helpers import fmt_date
+from utils.helpers import fmt_date, plan_title
 from utils.qr import make_qr
 
 log = logging.getLogger(__name__)
@@ -80,6 +80,26 @@ async def _deliver_subscription(
     )
 
 
+async def _credit_topup(call: CallbackQuery, payment, bot: Bot) -> None:
+    """Зачисляет пополнение на баланс и пытается возобновить приостановленную подписку."""
+    user = await repo.get_user_by_id(payment.user_id)
+    new_balance = await repo.add_balance(
+        user.id, float(payment.amount), "topup", "Пополнение баланса"
+    )
+    text = (
+        "✅ <b>Баланс пополнен!</b>\n\n"
+        f"Зачислено: <b>{int(payment.amount)} ₽</b>\n"
+        f"💰 Текущий баланс: <b>{new_balance:.0f} ₽</b>"
+    )
+    resumed = await sub_service.resume_after_topup(user)
+    if resumed:
+        text += (
+            f"\n\n🔄 Подписка <b>{plan_title(resumed.plan)}</b> возобновлена "
+            f"до <b>{fmt_date(resumed.expires_at)}</b>."
+        )
+    await call.message.answer(text, reply_markup=inline.back_to_menu())
+
+
 @router.callback_query(F.data.startswith("check_pay:"))
 async def cb_check_pay(call: CallbackQuery, state: FSMContext, bot: Bot) -> None:
     payment_id = int(call.data.split(":", 1)[1])
@@ -90,8 +110,13 @@ async def cb_check_pay(call: CallbackQuery, state: FSMContext, bot: Bot) -> None
     if payment.status == "paid":
         # платёж уже зачтён — повторно выдаём ключ (идемпотентно:
         # на случай если в прошлый раз выдача не дошла)
-        await _safe_answer(call, "Платёж подтверждён, выдаю ключ…")
-        if payment.type == "unban":
+        await _safe_answer(call, "Платёж подтверждён…")
+        if payment.type == "topup":
+            await call.message.answer(
+                "💼 Этот платёж уже зачтён — баланс был пополнен ранее.",
+                reply_markup=inline.back_to_menu(),
+            )
+        elif payment.type == "unban":
             user = await repo.get_user_by_id(payment.user_id)
             await sub_service.unban_account(user)
             refreshed = await repo.get_user(user.tg_id)
@@ -134,6 +159,10 @@ async def cb_check_pay(call: CallbackQuery, state: FSMContext, bot: Bot) -> None
         return
 
     await repo.mark_payment_paid(payment.id, donation.id)
+
+    if payment.type == "topup":
+        await _credit_topup(call, payment, bot)
+        return
 
     if payment.type == "unban":
         user = await repo.get_user_by_id(payment.user_id)

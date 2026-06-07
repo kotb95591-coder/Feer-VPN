@@ -43,6 +43,18 @@ async def disable_expired() -> int:
     return count
 
 
+async def auto_renew(bot: Bot) -> dict:
+    """Автопродление/приостановка истёкших подписок за счёт баланса."""
+    result = await sub_service.auto_renew_due(bot)
+    if result.get("renewed") or result.get("disabled"):
+        log.info(
+            "Автопродление: продлено %s, приостановлено %s",
+            result.get("renewed", 0),
+            result.get("disabled", 0),
+        )
+    return result
+
+
 async def run_antifraud() -> int:
     """Прогнать антифрод по всем активным подпискам."""
     outcomes = await antifraud.scan_all_subscriptions()
@@ -65,7 +77,7 @@ async def run_due_tasks(bot: Bot, task: str = "all") -> dict:
         await notify_expiring(bot)
         result["reminders"] = "ok"
     if task in ("all", "expire"):
-        result["expired"] = await disable_expired()
+        result["autorenew"] = await auto_renew(bot)
     if task in ("all", "antifraud"):
         result["fraud"] = await run_antifraud()
     if task in ("all", "payments"):
@@ -77,7 +89,7 @@ def start_scheduler(bot: Bot) -> AsyncIOScheduler:
     """Запуск APScheduler для polling/long-running режима."""
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(notify_expiring, "cron", hour=12, minute=0, args=[bot])
-    scheduler.add_job(disable_expired, "interval", minutes=30)
+    scheduler.add_job(auto_renew, "interval", minutes=30, args=[bot])
     scheduler.add_job(run_antifraud, "interval", minutes=15)
     scheduler.add_job(expire_payments, "interval", minutes=10)
     scheduler.start()

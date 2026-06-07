@@ -40,6 +40,7 @@ async def cb_stats(call: CallbackQuery) -> None:
     users = await repo.count_users()
     active = await repo.all_active_subscriptions()
     revenue = await repo.revenue_total()
+    balances = await repo.total_balance()
     solo = sum(1 for s in active if s.plan == "solo")
     family = sum(1 for s in active if s.plan == "family")
     text = (
@@ -47,7 +48,8 @@ async def cb_stats(call: CallbackQuery) -> None:
         f"Пользователей: <b>{users}</b>\n"
         f"Активных подписок: <b>{len(active)}</b>\n"
         f"· Solo: {solo}\n· Семья: {family}\n\n"
-        f"💰 Выручка (всего): <b>{int(revenue)} ₽</b>"
+        f"💰 Выручка (всего): <b>{int(revenue)} ₽</b>\n"
+        f"💼 На балансах клиентов: <b>{balances:.0f} ₽</b>"
     )
     await edit_or_send(call, text, inline.admin_menu())
     await call.answer()
@@ -95,6 +97,7 @@ async def cmd_client(message: Message) -> None:
         await message.answer("Клиент не найден")
         return
     sub = await repo.get_active_subscription(user.id)
+    balance = await repo.get_balance(user.id)
     sub_info = (
         f"Подписка: {plan_title(sub.plan)} до {fmt_date(sub.expires_at)}"
         if sub
@@ -103,6 +106,7 @@ async def cmd_client(message: Message) -> None:
     await message.answer(
         f"👤 <b>Клиент</b> tg:<code>{user.tg_id}</code>\n"
         f"Статус: {user.status} · нарушений: {user.violations}\n"
+        f"💼 Баланс: {balance:.0f} ₽\n"
         f"{sub_info}",
         reply_markup=inline.admin_client_actions(user.id),
     )
@@ -301,6 +305,66 @@ async def cmd_reply(message: Message, bot: Bot) -> None:
         await message.answer(f"⚠️ Не удалось отправить: {e}")
         return
     await message.answer("✅ Ответ отправлен пользователю.")
+
+
+# ---------------- Баланс ----------------
+
+@router.callback_query(F.data.startswith("adm:addbal:"))
+async def cb_addbal(call: CallbackQuery) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    _, _, user_id_s, amount_s = call.data.split(":")
+    user = await repo.get_user_by_id(int(user_id_s))
+    if not user:
+        await call.answer("Не найден", show_alert=True)
+        return
+    amount = float(amount_s)
+    new_balance = await repo.add_balance(user.id, amount, "admin", "Начисление админом")
+    try:
+        await call.bot.send_message(
+            user.tg_id,
+            f"💼 Тебе начислено <b>{int(amount)} ₽</b> на баланс.\n"
+            f"💰 Текущий баланс: <b>{new_balance:.0f} ₽</b>.",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    await call.answer(
+        f"Начислено {int(amount)} ₽. Баланс: {new_balance:.0f} ₽", show_alert=True
+    )
+
+
+@router.message(Command("addbalance"))
+async def cmd_addbalance(message: Message, bot: Bot) -> None:
+    if not _is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) < 3:
+        await message.answer("Использование: /addbalance &lt;tg_id&gt; &lt;сумма&gt;")
+        return
+    try:
+        tg_id = int(parts[1])
+        amount = float(parts[2])
+    except ValueError:
+        await message.answer("tg_id и сумма должны быть числами")
+        return
+    user = await repo.get_user(tg_id)
+    if not user:
+        await message.answer("Клиент не найден")
+        return
+    new_balance = await repo.add_balance(user.id, amount, "admin", "Начисление админом")
+    try:
+        await bot.send_message(
+            user.tg_id,
+            f"💼 Тебе начислено <b>{int(amount)} ₽</b> на баланс.\n"
+            f"💰 Текущий баланс: <b>{new_balance:.0f} ₽</b>.",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    await message.answer(
+        f"✅ Баланс клиента tg:<code>{user.tg_id}</code> пополнен на {int(amount)} ₽. "
+        f"Текущий баланс: <b>{new_balance:.0f} ₽</b>."
+    )
 
 
 # ---------------- Промокоды ----------------

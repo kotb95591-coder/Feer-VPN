@@ -32,6 +32,8 @@ class User(Base):
     violations: Mapped[int] = mapped_column(Integer, default=0)
     # tg_id того, кто привёл (реферал)
     referrer_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Баланс личного кабинета (₽). С него списываются подписки.
+    balance: Mapped[float] = mapped_column(Float, default=0.0)
 
     subscriptions: Mapped[list["Subscription"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -164,4 +166,25 @@ class Setting(Base):
     value: Mapped[str | None] = mapped_column(String(4096), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Transaction(Base):
+    """История операций по балансу личного кабинета.
+
+    amount > 0 — пополнение/бонус/возврат; amount < 0 — списание (покупка/разбан).
+    """
+
+    __tablename__ = "transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    amount: Mapped[float] = mapped_column(Float)
+    # topup / charge / refund / bonus / admin
+    kind: Mapped[str] = mapped_column(String(16))
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # баланс после операции (для удобного отображения истории)
+    balance_after: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), index=True
     )

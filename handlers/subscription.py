@@ -13,6 +13,7 @@ from utils.helpers import days_left, fmt_date, fmt_datetime, plan_title
 from utils.helpers import gen_payment_code
 from utils.qr import make_qr
 from services.donationalerts import build_payment_instruction
+from services import subscription as sub_service
 from utils.tg import edit_or_send
 
 log = logging.getLogger(__name__)
@@ -74,17 +75,59 @@ async def cb_devices(call: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "unban")
 async def cb_unban(call: CallbackQuery, state: FSMContext) -> None:
-    """Оплата разбана (300 ₽, включает Solo)."""
+    """Разбан с баланса (списывается PRICE_UNBAN, включает Solo)."""
     user = await repo.get_or_create_user(call.from_user.id, call.from_user.username)
-    code = gen_payment_code("UNBAN")
-    payment = await repo.create_payment(
-        user_id=user.id, amount=float(config.PRICE_UNBAN), code=code, type_="unban"
+    balance = await repo.get_balance(user.id)
+    price = float(config.PRICE_UNBAN)
+
+    if balance < price:
+        need = price - balance
+        await edit_or_send(
+            call,
+            "🔓 <b>Разбан аккаунта</b>\n\n"
+            f"Стоимость: <b>{int(price)} ₽</b> (включает Solo на месяц).\n"
+            f"💼 На балансе: <b>{balance:.0f} ₽</b> — не хватает <b>{need:.0f} ₽</b>.\n\n"
+            "Пополни баланс и вернись к разбану.",
+            inline.need_topup_menu(),
+        )
+        await call.answer()
+        return
+
+    try:
+        sub, _ = await sub_service.unban_with_balance(user)
+    except sub_service.InsufficientFundsError:
+        await edit_or_send(
+            call,
+            "💼 На балансе недостаточно средств. Пополни кабинет и попробуй снова.",
+            inline.need_topup_menu(),
+        )
+        await call.answer()
+        return
+    except sub_service.SubscriptionError as e:
+        log.error("Разбан с баланса: %s", e)
+        await edit_or_send(
+            call,
+            "⚠️ Не удалось завершить разбан. Напиши в поддержку.",
+            inline.back_to_menu(),
+        )
+        await call.answer()
+        return
+
+    key = sub.vless_key or ""
+    new_balance = await repo.get_balance(user.id)
+    caption = (
+        "✅ <b>Аккаунт разбанен!</b>\n\n"
+        f"Подписка Solo активна до <b>{fmt_date(sub.expires_at)}</b>.\n"
+        f"💼 Остаток на балансе: <b>{new_balance:.0f} ₽</b>\n\n"
+        f"🔑 <code>{key}</code>"
     )
-    await edit_or_send(
-        call,
-        "🔓 <b>Разбан аккаунта</b>\n\n"
-        + build_payment_instruction(code, config.PRICE_UNBAN)
-        + "\n\nПосле оплаты аккаунт разбанят и выдадут подписку Solo.",
-        inline.payment_check(payment.id),
-    )
+    try:
+        await call.message.delete()
+    except Exception:  # noqa: BLE001
+        pass
+    if key:
+        qr = BufferedInputFile(make_qr(key).read(), filename="key.png")
+        await call.message.answer_photo(photo=qr, caption=caption, reply_markup=inline.my_sub_menu())
+    else:
+        await call.message.answer(caption, reply_markup=inline.my_sub_menu())
     await call.answer()

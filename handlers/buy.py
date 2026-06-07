@@ -1,17 +1,19 @@
-"""Покупка подписки: выбор тарифа → (промокод) → создание платежа."""
+"""Покупка подписки: выбор тарифа → (промокод) → оплата с баланса."""
 import logging
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery
+from aiogram.types import BufferedInputFile, CallbackQuery
 
 from config import config, get_tariff
 from db import repo
 from handlers import texts
 from keyboards import inline
-from services.donationalerts import build_payment_instruction
+from services import promo as promo_service
+from services import subscription as sub_service
+from utils.helpers import fmt_date
+from utils.qr import make_qr
 from utils.tg import edit_or_send, edit_or_send_media
-from utils.helpers import gen_payment_code
 
 log = logging.getLogger(__name__)
 router = Router(name="buy")
@@ -45,15 +47,42 @@ async def cb_agree(call: CallbackQuery, state: FSMContext) -> None:
         await call.answer("Неизвестный тариф", show_alert=True)
         return
     await state.update_data(plan=plan, price=tariff["price"], bonus_days=0, promocode=None)
+    user = await repo.get_or_create_user(call.from_user.id, call.from_user.username)
+    balance = await repo.get_balance(user.id)
     text = (
         f"{tariff['emoji']} <b>{tariff['title']}</b>\n\n"
         f"Цена: <b>{tariff['price']} ₽</b> / {tariff['days']} дней\n"
-        f"Устройства: <b>{tariff['desc']}</b>\n\n"
+        f"Устройства: <b>{tariff['desc']}</b>\n"
+        f"💼 Баланс: <b>{balance:.0f} ₽</b>\n\n"
         "✅ С правилами ознакомлен(а).\n"
-        "Можно ввести промокод или сразу оплатить."
+        "Оплата спишется с баланса. Можно ввести промокод или сразу оплатить."
     )
     await edit_or_send(call, text, inline.buy_confirm(plan, tariff["price"]))
     await call.answer()
+
+
+async def _deliver_key(call: CallbackQuery, tariff: dict, sub, new_balance: float) -> None:
+    """Отправляет ключ + QR после списания с баланса."""
+    key = sub.vless_key or ""
+    caption = (
+        "✅ <b>Подписка активна!</b>\n\n"
+        f"Тариф: <b>{tariff['title']}</b>\n"
+        f"Действует до: <b>{fmt_date(sub.expires_at)}</b>\n"
+        f"Устройства: <b>{tariff['desc']}</b>\n"
+        f"💼 Остаток на балансе: <b>{new_balance:.0f} ₽</b>\n\n"
+        "🔑 <b>Твой ключ</b> (нажми, чтобы скопировать):\n"
+        f"<code>{key}</code>\n\n"
+        "Отсканируй QR или скопируй ключ в приложение."
+    )
+    try:
+        await call.message.delete()
+    except Exception:  # noqa: BLE001
+        pass
+    if key:
+        qr = BufferedInputFile(make_qr(key).read(), filename="key.png")
+        await call.message.answer_photo(photo=qr, caption=caption, reply_markup=inline.my_sub_menu())
+    else:
+        await call.message.answer(caption, reply_markup=inline.my_sub_menu())
 
 
 @router.callback_query(F.data.startswith("pay:"))
@@ -65,24 +94,54 @@ async def cb_pay(call: CallbackQuery, state: FSMContext) -> None:
         await call.answer("Неизвестный тариф", show_alert=True)
         return
 
-    price = data.get("price", tariff["price"])
+    price = float(data.get("price", tariff["price"]))
+    bonus_days = int(data.get("bonus_days", 0) or 0)
     promocode = data.get("promocode")
 
     user = await repo.get_or_create_user(call.from_user.id, call.from_user.username)
-    code = gen_payment_code()
-    payment = await repo.create_payment(
-        user_id=user.id,
-        amount=float(price),
-        code=code,
-        type_="subscription",
-        plan=plan,
-        promocode=promocode,
-    )
-    await state.update_data(payment_id=payment.id)
+    balance = await repo.get_balance(user.id)
 
-    await edit_or_send(
-        call,
-        build_payment_instruction(code, price),
-        inline.payment_check(payment.id),
-    )
+    if balance < price:
+        need = price - balance
+        await edit_or_send(
+            call,
+            f"💼 На балансе <b>{balance:.0f} ₽</b>, а для покупки "
+            f"<b>{tariff['title']}</b> нужно <b>{price:.0f} ₽</b>.\n\n"
+            f"Не хватает <b>{need:.0f} ₽</b> — пополни баланс и вернись к покупке.",
+            inline.need_topup_menu(),
+        )
+        await call.answer()
+        return
+
+    try:
+        sub, _is_new = await sub_service.buy_with_balance(user, plan, price, bonus_days)
+    except sub_service.InsufficientFundsError:
+        await edit_or_send(
+            call,
+            "💼 На балансе недостаточно средств. Пополни кабинет и попробуй снова.",
+            inline.need_topup_menu(),
+        )
+        await call.answer()
+        return
+    except sub_service.SubscriptionError as e:
+        log.error("Ошибка выдачи подписки с баланса: %s", e)
+        await edit_or_send(
+            call,
+            "⚠️ Деньги не списаны: не удалось выдать ключ. Напиши в поддержку — мы всё решим.",
+            inline.back_to_menu(),
+        )
+        await call.answer()
+        return
+
+    # промокод успешно применён — фиксируем редемпцию
+    if promocode:
+        result = await promo_service.validate_and_apply(
+            promocode, user.id, int(tariff["price"])
+        )
+        if result.ok and result.promo:
+            await promo_service.redeem(result.promo.id, user.id)
+
+    await state.clear()
+    new_balance = await repo.get_balance(user.id)
+    await _deliver_key(call, tariff, sub, new_balance)
     await call.answer()

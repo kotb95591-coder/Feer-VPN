@@ -17,6 +17,7 @@ from db.models import (
     PromoRedemption,
     Setting,
     Subscription,
+    Transaction,
     User,
 )
 
@@ -98,6 +99,83 @@ async def list_users(limit: int = 50, offset: int = 0) -> list[User]:
     )
 
 
+# ---------------- Balance / Transactions ----------------
+
+async def get_balance(user_id: int) -> float:
+    def _fn(s: Session) -> float:
+        u = s.get(User, user_id)
+        return float(u.balance or 0.0) if u else 0.0
+
+    return await run(_fn)
+
+
+async def add_balance(
+    user_id: int, amount: float, kind: str, description: str | None = None
+) -> float:
+    """Зачисляет amount (>0) на баланс и пишет транзакцию. Возвращает новый баланс."""
+
+    def _fn(s: Session) -> float:
+        u = s.get(User, user_id)
+        if not u:
+            return 0.0
+        u.balance = float(u.balance or 0.0) + float(amount)
+        s.add(
+            Transaction(
+                user_id=user_id,
+                amount=float(amount),
+                kind=kind,
+                description=description,
+                balance_after=u.balance,
+            )
+        )
+        return u.balance
+
+    return await run(_fn)
+
+
+async def deduct_balance(
+    user_id: int, amount: float, kind: str, description: str | None = None
+) -> bool:
+    """Списывает amount с баланса, если средств хватает. True — успешно."""
+
+    def _fn(s: Session) -> bool:
+        u = s.get(User, user_id)
+        if not u or float(u.balance or 0.0) < float(amount):
+            return False
+        u.balance = float(u.balance or 0.0) - float(amount)
+        s.add(
+            Transaction(
+                user_id=user_id,
+                amount=-float(amount),
+                kind=kind,
+                description=description,
+                balance_after=u.balance,
+            )
+        )
+        return True
+
+    return await run(_fn)
+
+
+async def list_transactions(user_id: int, limit: int = 10) -> list[Transaction]:
+    return await run(
+        lambda s: list(
+            s.scalars(
+                select(Transaction)
+                .where(Transaction.user_id == user_id)
+                .order_by(Transaction.created_at.desc())
+                .limit(limit)
+            )
+        )
+    )
+
+
+async def total_balance() -> float:
+    return await run(
+        lambda s: float(s.scalar(select(func.sum(User.balance))) or 0.0)
+    )
+
+
 # ---------------- Subscriptions ----------------
 
 async def create_subscription(user_id: int, plan: str, device_limit: int) -> Subscription:
@@ -124,6 +202,19 @@ async def get_active_subscription(user_id: int) -> Subscription | None:
         return s.scalar(
             select(Subscription)
             .where(Subscription.user_id == user_id, Subscription.status == "active")
+            .order_by(Subscription.expires_at.desc())
+        )
+
+    return await run(_fn)
+
+
+async def get_resumable_subscription(user_id: int) -> Subscription | None:
+    """Самая свежая приостановленная (expired) подписка, не забаненная."""
+
+    def _fn(s: Session) -> Subscription | None:
+        return s.scalar(
+            select(Subscription)
+            .where(Subscription.user_id == user_id, Subscription.status == "expired")
             .order_by(Subscription.expires_at.desc())
         )
 

@@ -85,8 +85,16 @@ class Config:
     VIOLATIONS_TO_BAN_ACCOUNT = _int("VIOLATIONS_TO_BAN_ACCOUNT", 2)
     ANTIFRAUD_WINDOW_HOURS = _int("ANTIFRAUD_WINDOW_HOURS", 24)
 
-    # ---- Оплата ----
+    # ---- Оплата / Баланс ----
     PAYMENT_TIMEOUT_MIN = _int("PAYMENT_TIMEOUT_MIN", 30)
+    # Минимальная сумма пополнения баланса (₽)
+    MIN_TOPUP = _int("MIN_TOPUP", 50)
+    # Пресеты сумм пополнения (кнопки в личном кабинете)
+    TOPUP_PRESETS = [
+        int(x)
+        for x in _get("TOPUP_PRESETS", "100,250,500,1000").replace(" ", "").split(",")
+        if x.isdigit()
+    ]
 
     def is_admin(self, tg_id: int) -> bool:
         return tg_id in self.ADMIN_IDS

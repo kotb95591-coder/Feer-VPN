@@ -83,9 +83,32 @@ SessionLocal = sessionmaker(
 )
 
 
+def _safe_migrate() -> None:
+    """Лёгкие миграции для уже существующих таблиц.
+
+    create_all() добавляет недостающие ТАБЛИЦЫ, но не добавляет новые КОЛОНКИ
+    в существующие. Поэтому новые поля (например users.balance) добавляем
+    через ALTER TABLE вручную. Каждый ALTER — в своей транзакции; если колонка
+    уже есть, ошибку просто игнорируем.
+    """
+    from sqlalchemy import text
+
+    statements = [
+        "ALTER TABLE users ADD COLUMN balance FLOAT DEFAULT 0",
+    ]
+    for stmt in statements:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(stmt))
+            log.info("Миграция применена: %s", stmt)
+        except Exception as e:  # noqa: BLE001
+            log.debug("Миграция пропущена (%s): %s", stmt, e)
+
+
 def init_db() -> None:
     """Создаёт таблицы, если их нет."""
     from db import models  # noqa: F401  (регистрируем модели)
 
     Base.metadata.create_all(engine)
+    _safe_migrate()
     log.info("БД инициализирована")

@@ -8,13 +8,24 @@ from config import config, get_tariff
 from db import repo
 from db.models import Subscription, User
 from services.marzban import MarzbanError, marzban
-from utils.helpers import gen_marzban_username
+from utils.helpers import gen_marzban_username, plan_title
 
 log = logging.getLogger(__name__)
 
 
 class SubscriptionError(Exception):
     pass
+
+
+class InsufficientFundsError(SubscriptionError):
+    """Недостаточно средств на балансе для покупки/продления."""
+
+    def __init__(self, need: float, have: float) -> None:
+        self.need = need
+        self.have = have
+        super().__init__(
+            f"Недостаточно средств: нужно {need:.0f} ₽, на балансе {have:.0f} ₽"
+        )
 
 
 async def issue_or_extend(
@@ -96,6 +107,151 @@ async def admin_grant(
     if days is not None:
         bonus_days = days - tariff["days"]
     return await issue_or_extend(user, plan, bonus_days=bonus_days)
+
+
+async def buy_with_balance(
+    user: User, plan: str, price: float, bonus_days: int = 0
+) -> tuple[Subscription, bool]:
+    """Покупает/продлевает подписку, списывая стоимость с баланса.
+
+    price — итоговая цена (уже с учётом промокода). При ошибке выдачи ключа
+    деньги возвращаются на баланс.
+    """
+    tariff = get_tariff(plan)
+    if not tariff:
+        raise SubscriptionError(f"Неизвестный тариф: {plan}")
+
+    have = await repo.get_balance(user.id)
+    ok = await repo.deduct_balance(
+        user.id, float(price), "charge", f"Покупка подписки {plan_title(plan)}"
+    )
+    if not ok:
+        raise InsufficientFundsError(float(price), have)
+
+    try:
+        sub, is_new = await issue_or_extend(user, plan, bonus_days)
+    except SubscriptionError:
+        await repo.add_balance(
+            user.id, float(price), "refund", "Возврат: не удалось выдать ключ"
+        )
+        raise
+    return sub, is_new
+
+
+async def unban_with_balance(user: User) -> tuple[Subscription, bool]:
+    """Разбан за счёт баланса (PRICE_UNBAN), включает выдачу Solo."""
+    price = float(config.PRICE_UNBAN)
+    have = await repo.get_balance(user.id)
+    ok = await repo.deduct_balance(user.id, price, "charge", "Разбан аккаунта")
+    if not ok:
+        raise InsufficientFundsError(price, have)
+    await unban_account(user)
+    refreshed = await repo.get_user(user.tg_id)
+    try:
+        return await issue_or_extend(refreshed or user, "solo")
+    except SubscriptionError:
+        await repo.add_balance(user.id, price, "refund", "Возврат: разбан не выдал ключ")
+        raise
+
+
+async def resume_after_topup(user: User, bot=None) -> Subscription | None:
+    """После пополнения пытается возобновить приостановленную подписку с баланса."""
+    sub = await repo.get_resumable_subscription(user.id)
+    if not sub:
+        return None
+    tariff = get_tariff(sub.plan)
+    if not tariff:
+        return None
+    price = float(tariff["price"])
+    days = tariff["days"]
+    ok = await repo.deduct_balance(
+        user.id, price, "charge", f"Возобновление {plan_title(sub.plan)}"
+    )
+    if not ok:
+        return None
+    await repo.extend_subscription(sub.id, days)
+    if sub.marzban_username:
+        try:
+            await marzban.set_status(sub.marzban_username, "active")
+        except MarzbanError:
+            pass
+        try:
+            await marzban.renew(sub.marzban_username, days)
+        except MarzbanError as e:
+            log.error("Возобновление: не удалось продлить %s: %s", sub.marzban_username, e)
+    refreshed = await repo.get_subscription(sub.id)
+    if bot is not None:
+        new_balance = await repo.get_balance(user.id)
+        try:
+            await bot.send_message(
+                user.tg_id,
+                f"✅ Подписка <b>{plan_title(sub.plan)}</b> возобновлена на {days} дн.\n"
+                f"Списано: <b>{price:.0f} ₽</b> · остаток: <b>{new_balance:.0f} ₽</b>.",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+    return refreshed or sub
+
+
+async def auto_renew_due(bot=None) -> dict:
+    """Автопродление истёкших подписок за счёт баланса.
+
+    Для каждой истёкшей активной подписки пытаемся списать стоимость тарифа
+    с баланса и продлить. Если средств не хватает — приостанавливаем доступ
+    и уведомляем о необходимости пополнить баланс.
+    """
+    subs = await repo.expired_subscriptions()
+    renewed = 0
+    disabled = 0
+    for sub in subs:
+        tariff = get_tariff(sub.plan)
+        price = float(tariff["price"]) if tariff else 0.0
+        days = tariff["days"] if tariff else 30
+        user = await repo.get_user_by_id(sub.user_id)
+        if not user:
+            continue
+        ok = await repo.deduct_balance(
+            user.id, price, "charge", f"Автопродление {plan_title(sub.plan)}"
+        )
+        if ok:
+            await repo.extend_subscription(sub.id, days)
+            if sub.marzban_username:
+                try:
+                    await marzban.renew(sub.marzban_username, days)
+                except MarzbanError as e:
+                    log.error("Автопродление: не удалось продлить %s: %s", sub.marzban_username, e)
+            renewed += 1
+            if bot is not None:
+                new_balance = await repo.get_balance(user.id)
+                try:
+                    await bot.send_message(
+                        user.tg_id,
+                        f"🔄 Подписка <b>{plan_title(sub.plan)}</b> автоматически продлена на "
+                        f"{days} дн.\nСписано: <b>{price:.0f} ₽</b> · остаток на балансе: "
+                        f"<b>{new_balance:.0f} ₽</b>.",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+        else:
+            await repo.set_subscription_status(sub.id, "expired")
+            if sub.marzban_username:
+                try:
+                    await marzban.set_status(sub.marzban_username, "disabled")
+                except MarzbanError as e:
+                    log.error("Не удалось отключить %s: %s", sub.marzban_username, e)
+            disabled += 1
+            if bot is not None:
+                have = await repo.get_balance(user.id)
+                try:
+                    await bot.send_message(
+                        user.tg_id,
+                        f"⚠️ Подписка <b>{plan_title(sub.plan)}</b> приостановлена: на балансе "
+                        f"<b>{have:.0f} ₽</b>, а для продления нужно <b>{price:.0f} ₽</b>.\n"
+                        "Пополни баланс в личном кабинете — и доступ включится.",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+    return {"renewed": renewed, "disabled": disabled}
 
 
 async def disable_expired() -> int:

@@ -10,6 +10,10 @@ class SupportStates(StatesGroup):
     waiting_message = State()
 
 
+class TopupStates(StatesGroup):
+    waiting_amount = State()
+
+
 class AdminStates(StatesGroup):
     promo_code = State()
     promo_type = State()

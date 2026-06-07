@@ -8,6 +8,7 @@ from config import TARIFFS, config
 def main_menu(is_admin: bool = False, has_sub: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="🛍 Купить подписку", callback_data="buy")
+    kb.button(text="💼 Личный кабинет", callback_data="cabinet")
     if has_sub:
         kb.button(text="🔑 Моя подписка", callback_data="my_sub")
     kb.button(text="🏷 Промокод", callback_data="promo")
@@ -15,7 +16,7 @@ def main_menu(is_admin: bool = False, has_sub: bool = False) -> InlineKeyboardMa
     kb.button(text="🆘 Поддержка", callback_data="support")
     if is_admin:
         kb.button(text="⚙️ Админ-панель", callback_data="admin")
-    kb.adjust(1, 2, 2, 1)
+    kb.adjust(1, 1, 2, 2, 1)
     return kb.as_markup()
 
 
@@ -33,7 +34,7 @@ def tariffs_menu() -> InlineKeyboardMarkup:
 
 def buy_confirm(plan: str, price: int, promo_applied: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text=f"💳 Оплатить {price} ₽", callback_data=f"pay:{plan}")
+    kb.button(text=f"💳 Оплатить {price} ₽ с баланса", callback_data=f"pay:{plan}")
     if not promo_applied:
         kb.button(text="🏷 Ввести промокод", callback_data=f"promo_for:{plan}")
     kb.button(text="« Назад", callback_data="buy")
@@ -90,6 +91,39 @@ def cancel_kb() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+# ---------------- Личный кабинет ----------------
+
+def cabinet_menu(has_sub: bool = False) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💳 Пополнить баланс", callback_data="topup")
+    kb.button(text="🛍 Купить подписку", callback_data="buy")
+    if has_sub:
+        kb.button(text="🔑 Моя подписка", callback_data="my_sub")
+    kb.button(text="🧾 История операций", callback_data="tx_history")
+    kb.button(text="« В меню", callback_data="menu")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def topup_menu() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for amt in config.TOPUP_PRESETS:
+        kb.button(text=f"{amt} ₽", callback_data=f"topup:{amt}")
+    kb.button(text="✏️ Другая сумма", callback_data="topup_custom")
+    kb.button(text="« Назад", callback_data="cabinet")
+    kb.adjust(2, 2, 1, 1)
+    return kb.as_markup()
+
+
+def need_topup_menu() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💳 Пополнить баланс", callback_data="topup")
+    kb.button(text="💼 Личный кабинет", callback_data="cabinet")
+    kb.button(text="« В меню", callback_data="menu")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
 # ---------------- Админ ----------------
 
 def admin_menu() -> InlineKeyboardMarkup:
@@ -120,6 +154,8 @@ def admin_client_actions(user_id: int) -> InlineKeyboardMarkup:
     kb.button(text="➕ +30 дней", callback_data=f"adm:extend:{user_id}")
     kb.button(text="🚫 Бан", callback_data=f"adm:ban:{user_id}")
     kb.button(text="✅ Разбан", callback_data=f"adm:unban:{user_id}")
+    kb.button(text="💰 +100 ₽", callback_data=f"adm:addbal:{user_id}:100")
+    kb.button(text="💰 +500 ₽", callback_data=f"adm:addbal:{user_id}:500")
     kb.button(text="« Назад", callback_data="adm:clients")
-    kb.adjust(2, 1, 2, 1)
+    kb.adjust(2, 1, 2, 2, 1)
     return kb.as_markup()
