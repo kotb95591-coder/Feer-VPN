@@ -56,4 +56,4 @@ def days_left(expires_at: datetime | None) -> int:
 
 
 def plan_title(plan: str) -> str:
-    return {"solo": "Solo", "family": "Семья"}.get(plan, plan)
+    return {"solo": "Solo", "family": "Семья", "trial": "Пробный"}.get(plan, plan)

@@ -660,6 +660,29 @@ async def user_has_any_subscription(user_id: int) -> bool:
     )
 
 
+async def has_paid_payment(user_id: int) -> bool:
+    """Был ли у пользователя хоть один успешный платёж (оплата/пополнение/разбан)."""
+    return await run(
+        lambda s: s.scalar(
+            select(func.count(Payment.id)).where(
+                Payment.user_id == user_id, Payment.status == "paid"
+            )
+        )
+        > 0
+    )
+
+
+async def set_trial_used(user_id: int) -> None:
+    """Помечает, что пользователь использовал бесплатный пробный период."""
+
+    def _fn(s: Session) -> None:
+        u = s.get(User, user_id)
+        if u:
+            u.trial_used = True
+
+    await run(_fn)
+
+
 # ---------------- Settings (key-value) ----------------
 
 async def get_setting(key: str) -> str | None:

@@ -18,8 +18,10 @@ def main_menu(is_admin: bool = False, has_sub: bool = False) -> InlineKeyboardMa
     return kb.as_markup()
 
 
-def tariffs_menu() -> InlineKeyboardMarkup:
+def tariffs_menu(show_trial: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+    if show_trial:
+        kb.button(text="🎁 Пробный период — 3 дня бесплатно", callback_data="trial")
     for code, t in TARIFFS.items():
         kb.button(
             text=f"{t['emoji']} {t['title']} — {t['price']} ₽ ({t['desc']})",

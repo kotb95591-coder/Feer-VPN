@@ -28,6 +28,33 @@ class InsufficientFundsError(SubscriptionError):
         )
 
 
+class TrialNotEligibleError(SubscriptionError):
+    """Пробный период недоступен (уже использован или уже был платёж)."""
+
+
+async def is_trial_eligible(user: User) -> bool:
+    """Пробный доступен, только если: включён, не использован, нет подписок и не было платежей."""
+    if not config.TRIAL_ENABLED:
+        return False
+    fresh = await repo.get_user(user.tg_id)
+    if fresh is not None and bool(getattr(fresh, "trial_used", False)):
+        return False
+    if await repo.user_has_any_subscription(user.id):
+        return False
+    if await repo.has_paid_payment(user.id):
+        return False
+    return True
+
+
+async def start_trial(user: User) -> Subscription:
+    """Активирует бесплатный пробный период: TRIAL_DEVICES устройство, TRIAL_DAYS дней, без автопродления."""
+    if not await is_trial_eligible(user):
+        raise TrialNotEligibleError("Пробный период недоступен")
+    sub, _is_new = await issue_or_extend(user, "trial")
+    await repo.set_trial_used(user.id)
+    return sub
+
+
 async def issue_or_extend(
     user: User, plan: str, bonus_days: int = 0
 ) -> tuple[Subscription, bool]:
@@ -214,6 +241,25 @@ async def auto_renew_due(bot=None) -> dict:
         days = tariff["days"] if tariff else 30
         user = await repo.get_user_by_id(sub.user_id)
         if not user:
+            continue
+        # Пробный период не продлевается — по истечении просто отключаем
+        if sub.plan == "trial":
+            await repo.set_subscription_status(sub.id, "expired")
+            if sub.marzban_username:
+                try:
+                    await marzban.set_status(sub.marzban_username, "disabled")
+                except MarzbanError as e:
+                    log.error("Не удалось отключить триал %s: %s", sub.marzban_username, e)
+            disabled += 1
+            if bot is not None:
+                try:
+                    await bot.send_message(
+                        user.tg_id,
+                        "🎁 Пробный период закончился.\n"
+                        f"Понравилось? Оформи подписку в меню — Solo от {config.PRICE_SOLO} ₽/мес.",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             continue
         ok = await repo.deduct_balance(
             user.id, price, "charge", f"Автопродление {plan_title(sub.plan)}"

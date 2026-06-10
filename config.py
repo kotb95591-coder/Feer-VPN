@@ -80,6 +80,11 @@ class Config:
     LIMIT_SOLO = _int("LIMIT_SOLO", 1)
     LIMIT_FAMILY = _int("LIMIT_FAMILY", 3)
 
+    # ---- Пробный период ----
+    TRIAL_ENABLED = _get("TRIAL_ENABLED", "true").lower() == "true"
+    TRIAL_DAYS = _int("TRIAL_DAYS", 3)
+    TRIAL_DEVICES = _int("TRIAL_DEVICES", 1)
+
     # ---- Антифрод ----
     MAX_UNIQUE_USERS = _int("MAX_UNIQUE_USERS", 10)
     VIOLATIONS_TO_BAN_ACCOUNT = _int("VIOLATIONS_TO_BAN_ACCOUNT", 2)
@@ -125,5 +130,20 @@ TARIFFS = {
 }
 
 
+# Пробный период — отдельный «тариф», намеренно не входит в TARIFFS,
+# чтобы не показываться в меню тарифов и в админ-выдаче.
+TRIAL_TARIFF = {
+    "code": "trial",
+    "title": "Пробный",
+    "price": 0,
+    "devices": config.TRIAL_DEVICES,
+    "days": config.TRIAL_DAYS,
+    "emoji": "🎁",
+    "desc": f"{config.TRIAL_DEVICES} подключение, {config.TRIAL_DAYS} дня бесплатно",
+}
+
+
 def get_tariff(code: str) -> dict | None:
+    if code == "trial":
+        return TRIAL_TARIFF
     return TARIFFS.get(code)

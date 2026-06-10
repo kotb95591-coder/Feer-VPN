@@ -34,6 +34,8 @@ class User(Base):
     referrer_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # Баланс личного кабинета (₽). С него списываются подписки.
     balance: Mapped[float] = mapped_column(Float, default=0.0)
+    # Использован ли бесплатный пробный период (один раз на аккаунт)
+    trial_used: Mapped[bool] = mapped_column(Boolean, default=False)
 
     subscriptions: Mapped[list["Subscription"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

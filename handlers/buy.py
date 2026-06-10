@@ -35,7 +35,57 @@ async def cb_buy(call: CallbackQuery, state: FSMContext) -> None:
         )
         await call.answer()
         return
-    await edit_or_send_media(call, texts.tariffs_text(), inline.tariffs_menu(), config.IMG_TARIFFS)
+    eligible = await sub_service.is_trial_eligible(user)
+    await edit_or_send_media(
+        call, texts.tariffs_text(), inline.tariffs_menu(show_trial=eligible), config.IMG_TARIFFS
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "trial")
+async def cb_trial(call: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    user = await repo.get_or_create_user(call.from_user.id, call.from_user.username)
+    active = await repo.get_active_subscription(user.id)
+    if active:
+        await edit_or_send(
+            call,
+            "🔑 У тебя уже есть активная подписка — пробный период не нужен.",
+            inline.my_sub_menu(),
+        )
+        await call.answer()
+        return
+    if not await sub_service.is_trial_eligible(user):
+        await edit_or_send(
+            call,
+            "🎁 Пробный период доступен только новым пользователям, которые ещё ни разу не оплачивали подписку.",
+            inline.tariffs_menu(),
+        )
+        await call.answer()
+        return
+    try:
+        sub = await sub_service.start_trial(user)
+    except sub_service.TrialNotEligibleError:
+        await edit_or_send(
+            call,
+            "🎁 Пробный период недоступен на твоём аккаунте.",
+            inline.tariffs_menu(),
+        )
+        await call.answer()
+        return
+    except sub_service.SubscriptionError as e:
+        log.error("Ошибка выдачи пробного периода: %s", e)
+        await edit_or_send(
+            call,
+            "⚠️ Не удалось выдать пробный ключ. Попробуй позже или напиши в поддержку.",
+            inline.back_to_menu(),
+        )
+        await call.answer()
+        return
+    await state.clear()
+    tariff = get_tariff("trial")
+    new_balance = await repo.get_balance(user.id)
+    await _deliver_key(call, tariff, sub, new_balance)
     await call.answer()
 
 
