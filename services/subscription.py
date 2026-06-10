@@ -36,6 +36,9 @@ async def is_trial_eligible(user: User) -> bool:
     """Пробный доступен, только если: включён, не использован, нет подписок и не было платежей."""
     if not config.TRIAL_ENABLED:
         return False
+    # Админам пробный доступен всегда — чтобы можно было тестировать выдачу.
+    if config.is_admin(user.tg_id):
+        return True
     fresh = await repo.get_user(user.tg_id)
     if fresh is not None and bool(getattr(fresh, "trial_used", False)):
         return False
